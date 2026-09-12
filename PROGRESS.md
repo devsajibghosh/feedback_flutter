@@ -1,5 +1,16 @@
 # Progress Log
 
+DONE: Run the 8-step local-first submit + sync pipeline verification (`flutter test tool/verify_sync_test.dart`), now that `libsqlite3-dev` is installed — real output, not code-reading. Confirmed `libsqlite3.so` (unversioned) now resolves via `ldconfig -p` before running. All 8 steps passed; test result: `All tests passed!` (exit code 0). Per-step evidence from the actual run:
+
+1. **DB file created** — `DB path: /tmp/feedback_verify_GHHFAD/FeedbackSystem/feedback.db`, `File exists on disk: true`.
+2. **Submit inserts a row** — `submit() returned in 27ms`; `sqlite3` CLI dump immediately after shows row `id=1, org_id=999, rating=poor, synced=0`.
+3. **Row has synced=0** — same dump, `synced` column reads `0`; `debugSummary` confirms `pending=1 sent=0 rejected=0`.
+4. **5s first-attempt tick fires** — mock server log: `mock server received: POST /api/feedback/store` with the multipart body (`organization_id=999`, `rating=poor`, `comment=...`) arriving during the "waiting for the 5s first-attempt tick" window.
+5. **POST goes out, request + response logged** — full multipart request body logged above, and `mock server responded: 200 {"status":"success","message":"ok"}`.
+6. **Row flips to synced=1** — `sqlite3` dump right after: `id=1 ... synced=1`; `debugSummary: pending=0 sent=1 rejected=0 lastSuccessfulSync=2026-09-12 20:44:11`.
+7. **Network blocked** — mock server stopped, then `submit() returned in 9ms while offline` (still instant); dump shows the new row `id=2 ... synced=0` while row 1 stays `synced=1`. The row's own 5s attempt then genuinely failed against the down server (`DioException: connection error ... Connection refused`), correctly left at `synced=0`, `consecutiveFailures=1`, `currentBackoff=0:01:30`.
+8. **Network restored, drains within one tick** — mock server restarted on the same port; the pending row's request (`rating=very_poor`) is logged arriving, server responds `200 success`, and the final dump shows both rows `synced=1`: `FINAL debugSummary: total=2 pending=0 sent=2 rejected=0`.
+
 DONE: Resolve the "APK crashed but PROGRESS.md said the PRAGMA fix was already in place" contradiction — the installed `feedback.apk` predates the fix on disk. `git log` for `lib/services/db_service.dart` only has one entry (`c763e0b`, 2026-09-12 20:23:46+06) because this repo was `git init`'d partway through this session — there was no commit history before that to compare against, so the real evidence is filesystem mtimes, not git dates: `feedback.apk` was last built at **2026-09-12 19:16:17+06**, while `lib/services/db_service.dart` was last modified at **2026-09-12 19:29:35+06** — about 13 minutes *after* the APK was built (`lib/services/api_service.dart` and `lib/main.dart` are later still, 19:29:37 and 19:32:17). So the fix isn't missing or reverted — the committed APK is simply a stale build from before the fix existed, and it was never rebuilt afterward. The crash the user saw on-device is consistent with running that stale APK.
 
 DONE: Audit the six FIX-02 work items against the current code (no changes made) — full findings below.
