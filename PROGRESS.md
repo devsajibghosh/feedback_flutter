@@ -1,5 +1,47 @@
 # Progress Log
 
+DONE (FIX-04 §4 — final release build): Before building, reran
+everything per §3's "rerun everything": `flutter analyze` — clean.
+`flutter test test/widget_test.dart` — **89/89 pass**, fresh, including
+all 8 SPEC-RESPONSIVE.md §9 sizes with the keyboard open (no overflow
+at any size). Debug-surface grep for `FIX-01`, `FIX-02`, `TEMP`,
+`debug` across `lib/` — only legitimate historical citation comments
+and the intentionally-kept internal `DbService.debugSummary()`/
+`SyncService.debugSummary()` diagnostic API remain (confirmed already
+audited and kept-on-purpose in FIX-03 §6); no literal `// TEMP` block,
+no `print`/`debugPrint`, no `LogInterceptor` anywhere.
+Then built: `flutter build apk --release` (Gradle `assembleRelease`,
+116.2s) → `build/app/outputs/flutter-apk/app-release.apk`, copied to
+`feedback.apk` in the project root.
+**Freshness, proven two ways as asked** (the stale-build mistake has
+happened twice before):
+1. `find lib pubspec.yaml android/app/src -type f -newer feedback.apk`
+   returns **nothing** — no source file postdates the APK.
+2. Extracted `libapp.so` for all three architectures and searched for
+   the literal `কেন সন্তুষ্ট হন নি?` (the new negative-dialog header
+   title, FIX-04 §1 — exists nowhere in the old header code). **Found
+   in all three** (`arm64-v8a`, `armeabi-v7a`, `x86_64`), 1 occurrence
+   each. Also confirmed the new comment-label string
+   `অন্য কারণ থাকলে এখানে লিখুন` present in all three. Note: plain
+   `strings`/`grep -a` on the raw file find **neither** this string nor
+   any other Bengali literal (even long-standing ones like
+   `ধন্যবাদ`) and silently report nothing — Dart's AOT compiler stores
+   non-Latin1 string constants as UTF-16LE, not UTF-8, inside
+   `libapp.so`, so a byte-for-byte UTF-8 grep against it always comes
+   back empty regardless of whether the string is really there. Had to
+   re-encode the search string as UTF-16LE (Python) and search for
+   those raw bytes instead — worth recording so a future session
+   doesn't misread a false "not found" as evidence of a stale build.
+`apksigner verify --print-certs`: signed with the real release key
+(`CN=Feedback Machine, OU=Code Station 23`), not debug.
+`aapt dump badging`: `application-icon` still resolves to `res/BW.xml`
+(the adaptive icon), unaffected by this pass as expected.
+**Path:** `/home/sajibghosh/soft/feedback-flutter/feedback.apk`.
+**Size:** 57,136,184 bytes (57.1MB) — **-188 bytes** from the previous
+(FIX-03) build, i.e. essentially unchanged: this pass only replaced
+some header/label markup and English-sub-label strings, no new
+dependencies or assets.
+
 DONE (FIX-04 §3 — full tool-harness rerun, all 6 real tests): ran
 `flutter test tool/verify_sync_test.dart` fresh this session, not
 trusted from the log. **All 6 pass:** the 8-step local-first
