@@ -60,28 +60,38 @@ class Responsive {
     return lerpDouble(compact, expandedAt840, t)!;
   }
 
-  // ── Rating buttons (§4.1) ────────────────────────────────────────────
+  // ── Rating buttons (§4.1, typography FIX-03 §5) ─────────────────────
+  /// Emoji leads at roughly 2.2x the Bengali label, three fixed steps (not
+  /// the smooth interpolation most other sizes here use, since FIX-03 §5
+  /// asks for exact values "at every breakpoint") — 68/56/46 across
+  /// expanded/medium/compact.
+  double get ratingEmojiSize => isExpanded ? 68.0 : (isMedium ? 56.0 : 46.0);
+
+  /// 30/25/21 — the label the emoji's size now leads over.
+  double get ratingLabelSize => isExpanded ? 30.0 : (isMedium ? 25.0 : 21.0);
+
+  /// The English sub-label (FIX-03 §5): 16/14/12, "about half the Bengali
+  /// size."
+  double get ratingEnglishSubSize => isExpanded ? 16.0 : (isMedium ? 14.0 : 12.0);
+
+  /// Tall enough to comfortably fit the emoji + both labels at the sizes
+  /// above with no clipping, at every one of the 8 SPEC-RESPONSIVE.md test
+  /// sizes including short-height/landscape — FIX-03 §5 explicitly prefers
+  /// growing the card over shrinking the type ("if the larger type breaks
+  /// [the near-square aspect], grow the card rather than shrink the type"),
+  /// so unlike the old formula this is no longer clamped down for
+  /// [isShortHeight]. All five cards share this one value, so they stay
+  /// exactly the same height regardless of how much any one label's
+  /// [FittedBox] has to shrink to fit its own card's width.
   double get ratingButtonHeight {
-    final base = _scale(
-      compactPortrait: 150,
-      compactLandscape: 120,
-      expanded: (_) => 220,
-    );
-    if (!isShortHeight) return base;
-    return base.clamp(0.0, height * 0.42);
+    final vertical = ratingButtonPadding.vertical;
+    final content = ratingEmojiSize * 1.15 +
+        13 + // gap below the emoji
+        ratingLabelSize * 1.3 +
+        3 + // gap below the Bengali label
+        ratingEnglishSubSize * 1.3;
+    return vertical + content;
   }
-
-  double get ratingEmojiSize => _scale(
-        compactPortrait: 44,
-        compactLandscape: 38,
-        expanded: (s) => (s * 0.047).clamp(46.0, 82.0),
-      );
-
-  double get ratingLabelSize => _scale(
-        compactPortrait: 17,
-        compactLandscape: 15,
-        expanded: (s) => (s * 0.019).clamp(22.0, 28.0),
-      );
 
   double get ratingGap => _scale(
         compactPortrait: 8,

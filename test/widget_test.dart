@@ -1157,6 +1157,61 @@ void main() {
     );
   });
 
+  group('FIX-03 §5: card typography — emoji leads, text confirms', () {
+    testWidgets(
+      'emoji is ~2.2x the Bengali label, the English sub-label renders '
+      'smaller than it, and all five cards stay the same height — at '
+      'compact, medium, and expanded',
+      (WidgetTester tester) async {
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        for (final size in [
+          const Size(500, 900), // compact: shortestSide < 600
+          const Size(700, 1000), // medium: 600-840
+          const Size(1280, 800), // expanded: >= 840
+        ]) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+
+          await tester.pumpWidget(
+            MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          final spec = kRatingSpecs.first; // very_good
+          final emojiSize =
+              tester.widget<Text>(find.text(spec.emoji)).style!.fontSize!;
+          final labelSize =
+              tester.widget<Text>(find.text(spec.label)).style!.fontSize!;
+          final subSize = tester
+              .widget<Text>(find.text(spec.englishLabel))
+              .style!
+              .fontSize!;
+
+          expect(
+            emojiSize / labelSize,
+            closeTo(2.2, 0.15),
+            reason: 'at ${size.width.toInt()}x${size.height.toInt()}: '
+                'emoji=$emojiSize label=$labelSize',
+          );
+          expect(subSize, lessThan(labelSize));
+
+          final cardHeights = tester
+              .renderObjectList<RenderBox>(find.byType(RatingButton))
+              .map((r) => r.size.height)
+              .toSet();
+          expect(cardHeights, hasLength(1),
+              reason: 'all five rating cards must be exactly the same height');
+
+          expect(tester.takeException(), isNull);
+        }
+      },
+    );
+  });
+
   group('FIX-03 §4: helper text under the rating cards', () {
     const helperText =
         'খারাপ বা খুব খারাপ নির্বাচন করলে সমস্যার বিস্তারিত জানানোর সুযোগ থাকবে।';
