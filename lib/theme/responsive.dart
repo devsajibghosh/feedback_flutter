@@ -185,4 +185,7 @@ class Responsive {
 
   double get noticeStripFontSize =>
       _scale(compactPortrait: 14, expanded: (_) => 16);
+
+  // ── Rating-grid helper text (FIX-03 §4) ─────────────────────────────
+  double get helperTextSize => isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
 }

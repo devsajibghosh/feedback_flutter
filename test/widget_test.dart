@@ -1157,6 +1157,73 @@ void main() {
     );
   });
 
+  group('FIX-03 §4: helper text under the rating cards', () {
+    const helperText =
+        'খারাপ বা খুব খারাপ নির্বাচন করলে সমস্যার বিস্তারিত জানানোর সুযোগ থাকবে।';
+
+    testWidgets('shown below the rating grid on a normal-height screen',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(helperText), findsOneWidget);
+      final text = tester.widget<Text>(find.text(helperText));
+      expect(text.textAlign, TextAlign.center);
+      expect(text.maxLines, isNull, reason: 'must never truncate');
+
+      // Below the rating row, not above or beside it.
+      final rowBottom = tester.getBottomLeft(find.byType(RatingButton).first).dy;
+      final helperTop = tester.getTopLeft(find.text(helperText)).dy;
+      expect(helperTop, greaterThanOrEqualTo(rowBottom));
+    });
+
+    testWidgets('hidden on a short-height (phone-landscape) screen',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(915, 412);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(helperText), findsNothing);
+    });
+
+    testWidgets('is plain informational text, not a tappable control',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Tapping it must do nothing — no dialog opens, nothing throws.
+      await tester.tap(find.text(helperText));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsNothing);
+      expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsNothing);
+    });
+  });
+
   group('FIX-03 §2: success message — 4s, non-blocking', () {
     testWidgets('the message auto-dismisses at 4s, not the old 1500ms',
         (WidgetTester tester) async {

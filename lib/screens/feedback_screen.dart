@@ -295,6 +295,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
                                 : responsive.gap(52),
                           ),
                           _RatingRow(onSelect: _handleRatingTap),
+                          if (!responsive.isShortHeight) const _RatingHelperText(),
                         ],
                       ),
                     ),
@@ -439,6 +440,44 @@ class _RatingRow extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The hint below the rating grid (FIX-03 §4): tells a visitor who's about
+/// to tap 🙁 or 😞 that there's a place to explain what went wrong, before
+/// they've committed to a rating and possibly walked away. Plain text, not
+/// a control — no gesture, no semantics as a button, just informational
+/// copy a screen reader reads like any other paragraph. Hidden on a short
+/// (phone-landscape) screen, where the ratings themselves need the room
+/// more than the hint does.
+class _RatingHelperText extends StatelessWidget {
+  const _RatingHelperText();
+
+  @override
+  Widget build(BuildContext context) {
+    final size = Responsive.of(context).helperTextSize;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      // Same maxWidth as _RatingRow's non-wrap branch, so on a very wide
+      // screen this wraps at the same point the rating grid itself does —
+      // the screen edge and the grid edge are only the same thing up to
+      // 1200px.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: Text(
+          'খারাপ বা খুব খারাপ নির্বাচন করলে সমস্যার বিস্তারিত জানানোর সুযোগ থাকবে।',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: AppTheme.bodyFontFamily,
+            fontFamilyFallback: AppTheme.bengaliFallback,
+            fontWeight: FontWeight.w400,
+            fontSize: size,
+            color: AppTokens.parchment.withOpacity(0.6),
+            letterSpacing: size * 0.04,
+          ),
+        ),
+      ),
     );
   }
 }
