@@ -1,5 +1,7 @@
 # Progress Log
 
+DONE: Resolve the "APK crashed but PROGRESS.md said the PRAGMA fix was already in place" contradiction — the installed `feedback.apk` predates the fix on disk. `git log` for `lib/services/db_service.dart` only has one entry (`c763e0b`, 2026-09-12 20:23:46+06) because this repo was `git init`'d partway through this session — there was no commit history before that to compare against, so the real evidence is filesystem mtimes, not git dates: `feedback.apk` was last built at **2026-09-12 19:16:17+06**, while `lib/services/db_service.dart` was last modified at **2026-09-12 19:29:35+06** — about 13 minutes *after* the APK was built (`lib/services/api_service.dart` and `lib/main.dart` are later still, 19:29:37 and 19:32:17). So the fix isn't missing or reverted — the committed APK is simply a stale build from before the fix existed, and it was never rebuilt afterward. The crash the user saw on-device is consistent with running that stale APK.
+
 DONE: Audit the six FIX-02 work items against the current code (no changes made) — full findings below.
 
 ## FIX-02 audit (2026-09-12)
