@@ -1,0 +1,242 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:dio/dio.dart';
+import 'package:meta/meta.dart';
+
+import '../models/feedback_entry.dart';
+import 'api_service.dart';
+import 'db_service.dart';
+import 'debug_log.dart';
+
+/// Local-first submit plus a background queue worker (FIX-02 §1 — this
+/// supersedes SPEC.md §4.7 and §4.8 entirely).
+///
+/// Submitting a feedback is a single SQLite insert. The network is never in
+/// that path: [submit] returns as soon as the row is written, whether the
+/// device is online, offline, or on a terrible connection. A single
+/// long-lived instance of this class is created once in `main()` and
+/// [start]ed once — it must never be owned by a widget, since it has to
+/// keep draining the queue for the life of the app regardless of which
+/// screen is on top.
+class SyncService {
+  SyncService({ApiService? api, DbService? db})
+      : _api = api ?? ApiService(),
+        _db = db ?? DbService();
+
+  static const _firstAttemptDelay = Duration(seconds: 5);
+  static const _regularInterval = Duration(seconds: 45);
+  static const _maxBackoff = Duration(minutes: 15);
+  static const _batchSize = 3;
+  static const _rowGap = Duration(milliseconds: 500);
+  static const _retention = Duration(days: 7);
+
+  final ApiService _api;
+  final DbService _db;
+
+  bool _started = false;
+  bool _draining = false;
+  Timer? _tickTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+  Duration _backoff = _regularInterval;
+  int _consecutiveFailures = 0;
+  DateTime? _lastSuccessfulSync;
+
+  /// Writes the row and returns immediately — no `await` on anything
+  /// network. If even the local write fails, the exception propagates so
+  /// the caller can show the real error (FIX-01 §3) instead of failing
+  /// silently; that is the only way this can fail.
+  Future<SubmitResult> submit({
+    required int orgId,
+    required String rating,
+    String comment = '',
+    List<int> categoryIds = const [],
+  }) async {
+    await _db.insert(
+      FeedbackEntry(
+        orgId: orgId,
+        rating: rating,
+        comment: comment,
+        categoryIds: categoryIds,
+        createdAt: DateTime.now(),
+        synced: 0,
+      ),
+    );
+
+    // First attempt for this row: 5s from now, independent of the regular
+    // tick schedule. If several rows land within the same 5s window (a
+    // visitor tapping more than once), the batching in _drain picks all of
+    // them up together the first time any of these timers fires — the rest
+    // just find nothing left to do.
+    Timer(_firstAttemptDelay, _drain);
+
+    return const SubmitSuccess('আপনার মূল্যবান মতামতের জন্য ধন্যবাদ! 👏');
+  }
+
+  /// Starts the queue worker: the 45s (backing off on failure) tick, the
+  /// connectivity-regained trigger, and the one-time startup retention
+  /// cleanup. Safe to call more than once — only the first call does
+  /// anything.
+  void start() {
+    if (_started) return;
+    _started = true;
+
+    _db.deleteOldSyncedRows(olderThan: _retention).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      DebugLog.record('retention cleanup', error, stackTrace);
+    });
+
+    _scheduleNext(_regularInterval);
+
+    try {
+      _connectivitySub = Connectivity().onConnectivityChanged.listen((
+        results,
+      ) {
+        if (results.any((r) => r != ConnectivityResult.none)) {
+          _drain();
+        }
+      });
+    } catch (_) {
+      // No platform implementation available (e.g. tests) — the tick timer
+      // still covers retrying.
+    }
+  }
+
+  void _scheduleNext(Duration delay) {
+    _tickTimer?.cancel();
+    _tickTimer = Timer(delay, () async {
+      await _drain();
+      _scheduleNext(_backoff);
+    });
+  }
+
+  /// Drains up to [_batchSize] oldest pending rows, oldest first, with a
+  /// [_rowGap] pause between them. Never throws — every path here is
+  /// diagnostic-only. Skips entirely if a drain is already running, so the
+  /// 5s-after-insert timer, the connectivity trigger, and the regular tick
+  /// never race each other.
+  Future<void> _drain() async {
+    if (_draining) return;
+    _draining = true;
+    try {
+      final rows = await _db.getUnsyncedBatch(limit: _batchSize);
+      var hardFailure = false;
+      var anySucceeded = false;
+
+      for (var i = 0; i < rows.length; i++) {
+        final row = rows[i];
+        final id = row.id;
+        if (id == null) continue;
+
+        try {
+          final result = await _api.submitFeedback(
+            orgId: row.orgId,
+            rating: row.rating,
+            comment: row.comment,
+            categoryIds: row.categoryIds,
+          );
+          if (result is SubmitSuccess) {
+            await _db.markSynced(id);
+            anySucceeded = true;
+          } else {
+            // A 2xx whose body doesn't actually claim success. Not a 422,
+            // so it isn't a permanent rejection, but it also isn't a
+            // network/HTTP error — treat it the same as "any other
+            // outcome": stop the batch and back off rather than guessing.
+            hardFailure = true;
+            break;
+          }
+        } on DioException catch (e) {
+          if (e.response?.statusCode == 422) {
+            await _db.markRejected(id);
+            continue;
+          }
+          DebugLog.record('sync row $id', e);
+          hardFailure = true;
+          break;
+        }
+
+        if (i < rows.length - 1) {
+          await Future.delayed(_rowGap);
+        }
+      }
+
+      if (hardFailure) {
+        _consecutiveFailures++;
+        final scaled =
+            _regularInterval.inSeconds * math.pow(2, _consecutiveFailures);
+        _backoff = Duration(
+          seconds: math.min(scaled.toInt(), _maxBackoff.inSeconds),
+        );
+      } else {
+        _consecutiveFailures = 0;
+        _backoff = _regularInterval;
+        if (anySucceeded) {
+          _lastSuccessfulSync = DateTime.now();
+        }
+      }
+    } catch (error, stackTrace) {
+      // A sync tick must never crash the app or surface anything to the
+      // user — just log it for the debug dump and wait for the next one.
+      DebugLog.record('drain', error, stackTrace);
+    } finally {
+      _draining = false;
+    }
+  }
+
+  /// Runs one drain cycle immediately, without waiting for a timer. Tests
+  /// only — production code paces itself entirely through [start] and
+  /// [submit]'s own 5s trigger.
+  @visibleForTesting
+  Future<void> drainForTest() => _drain();
+
+  /// The long-press debug dump (FIX-01 §5, extended by FIX-02 §1).
+  Future<SyncDebugSummary> debugSummary() async {
+    final db = await _db.debugSummary();
+    return SyncDebugSummary(
+      total: db.total,
+      bySynced: db.bySynced,
+      oldestPending: db.oldestPending,
+      dbPath: db.dbPath,
+      currentBackoff: _backoff,
+      consecutiveFailures: _consecutiveFailures,
+      lastError: DebugLog.lastError,
+      lastSuccessfulSync: _lastSuccessfulSync,
+    );
+  }
+
+  void dispose() {
+    _tickTimer?.cancel();
+    _connectivitySub?.cancel();
+  }
+}
+
+/// See [SyncService.debugSummary].
+class SyncDebugSummary {
+  const SyncDebugSummary({
+    required this.total,
+    required this.bySynced,
+    required this.oldestPending,
+    required this.dbPath,
+    required this.currentBackoff,
+    required this.consecutiveFailures,
+    required this.lastError,
+    required this.lastSuccessfulSync,
+  });
+
+  final int total;
+
+  /// Keyed by the `synced` column's value: 0 pending, 1 sent, -1 rejected.
+  final Map<int, int> bySynced;
+
+  final DateTime? oldestPending;
+  final String dbPath;
+  final Duration currentBackoff;
+  final int consecutiveFailures;
+  final String? lastError;
+  final DateTime? lastSuccessfulSync;
+}

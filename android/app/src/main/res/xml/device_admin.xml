@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No device-admin policies are actually needed here — this descriptor
+     exists only so FeedbackDeviceAdminReceiver is a valid, registerable
+     admin component for setLockTaskPackages() to target on a
+     device-owner-provisioned kiosk (§4.9). -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies />
+</device-admin>

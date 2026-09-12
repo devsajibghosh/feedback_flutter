@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<title>ফিডব্যাক মেশিন</title>
+<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+<link rel="stylesheet" href="./css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+/* ─────────────────────────────────────────────────────────
+   DESIGN TOKENS
+───────────────────────────────────────────────────────── */
+:root {
+  /* Palette */
+  --verdant:      #1B4D3E;
+  --verdant-mid:  #2E6B52;
+  --verdant-lit:  #3D8A68;
+  --sage-fill:    #E8F2EC;
+  --ivory:        #F9F6EE;
+  --parchment:    #EDE8D9;
+  --border:       #D4C9B0;
+  --border-mid:   #C0B49A;
+  --ink:          #1C1C1A;
+  --ink-mid:      #4A4438;
+  --ink-muted:    #8C7B6B;
+  --amber:        #B5813D;
+  --amber-lit:    #F5E9D0;
+  --white:        #FFFFFF;
+  --error:        #922B21;
+  --error-mid:    #C0392B;
+  --error-lit:    #FDECEA;
+
+  /* Rating accent colors */
+  --c-very-good:  #1B4D3E;
+  --c-good:       #2E6B52;
+  --c-satisfact:  #B5813D;
+  --c-poor:       #922B21;
+  --c-very-poor:  #6B1A1A;
+
+  /* Shape */
+  --r-xs:  6px;
+  --r-sm:  10px;
+  --r-md:  14px;
+  --r-lg:  20px;
+  --r-xl:  28px;
+
+  /* Shadow */
+  --sh-card:  0 2px 10px rgba(28,28,26,.07), 0 1px 3px rgba(28,28,26,.04);
+  --sh-float: 0 12px 40px rgba(0,0,0,.18),   0 4px 12px rgba(0,0,0,.08);
+  --sh-modal: 0 28px 80px rgba(0,0,0,.30),   0 8px 24px rgba(0,0,0,.14);
+
+  /* Motion */
+  --ease:        cubic-bezier(.4,0,.2,1);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  --dur-fast:    .16s;
+  --dur-mid:     .22s;
+}
+
+/* ─────────────────────────────────────────────────────────
+   RESET
+───────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+body {
+  font-family: 'DM Sans', 'Hind Siliguri', 'SolaimanLipi', system-ui, sans-serif;
+  background: var(--verdant);
+  color: var(--ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─────────────────────────────────────────────────────────
+   BACKGROUND STAGE
+───────────────────────────────────────────────────────── */
+.full-bg {
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Blurred photo backdrop */
+.full-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('img/bd.jpg');
+  background-size: cover;
+  background-position: center;
+  filter: blur(14px) brightness(.3) saturate(.75);
+  z-index: 0;
+  transform-origin: center;
+  animation: bgDrift 32s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes bgDrift {
+  from { transform: scale(1);    }
+  to   { transform: scale(1.09); }
+}
+
+/* Noise texture for depth */
+.full-bg::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.035'/%3E%3C/svg%3E");
+  background-size: 220px;
+  opacity: 1;
+}
+
+/* ─────────────────────────────────────────────────────────
+   TOP MARQUEE BAR
+───────────────────────────────────────────────────────── */
+.top-marquee {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  background: rgba(10, 28, 20, .84);
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  padding: 9px 20px;
+}
+
+#dynamic-marquee-text {
+  font-size: .8rem;
+  font-weight: 500;
+  color: rgba(194, 224, 208, .88);
+  text-align: center;
+  letter-spacing: .05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─────────────────────────────────────────────────────────
+   LOGIN SECTION
+───────────────────────────────────────────────────────── */
+#login-section {
+  position: relative;
+  z-index: 10;
+  background: var(--ivory);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: var(--r-xl);
+  padding: 52px 48px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--sh-modal);
+  text-align: center;
+}
+
+.login-brand { margin-bottom: 36px; }
+
+.login-icon-wrap {
+  width: 60px; height: 60px;
+  background: var(--verdant);
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  box-shadow: 0 6px 20px rgba(27,77,62,.38);
+}
+
+.login-icon-wrap i {
+  font-size: 1.4rem;
+  color: #fff;
+}
+
+.login-brand h4 {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.02em;
+  line-height: 1.2;
+}
+
+.login-brand p {
+  font-size: .82rem;
+  color: var(--ink-muted);
+  margin-top: 5px;
+  letter-spacing: .02em;
+}
+
+.field { margin-bottom: 16px; text-align: left; }
+
+.field > label {
+  display: block;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ink-mid);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  margin-bottom: 7px;
+}
+
+.field-wrap { position: relative; }
+
+.field-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: .94rem;
+  color: var(--ink);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease);
+}
+
+.field-input:focus {
+  border-color: var(--verdant);
+  box-shadow: 0 0 0 3px rgba(27,77,62,.12);
+}
+
+.field-input.padded-right { padding-right: 46px; }
+
+.eye-btn {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 5px;
+  line-height: 1;
+  font-size: .9rem;
+  transition: color var(--dur-fast);
+}
+
+.eye-btn:hover { color: var(--ink); }
+
+.btn-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 13px 20px;
+  margin-top: 10px;
+  background: var(--verdant);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: .94rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  cursor: pointer;
+  transition: background var(--dur-mid) var(--ease),
+              transform var(--dur-fast) var(--ease),
+              box-shadow var(--dur-mid) var(--ease);
+  box-shadow: 0 4px 14px rgba(27,77,62,.32);
+}
+
+.btn-login:hover {
+  background: var(--verdant-mid);
+  transform: translateY(-1px);
+  box-shadow: 0 7px 22px rgba(27,77,62,.38);
+}
+
+.btn-login:active { transform: translateY(0); }
+
+/* ─────────────────────────────────────────────────────────
+   FEEDBACK APP SHELL
+───────────────────────────────────────────────────────── */
+#feedback-app {
+  display: none;
+  width: 100%;
+  position: relative;
+  z-index: 2;
+}
+
+.app-stage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 84px 24px 52px;
+  text-align: center;
+}
+
+/* Logo */
+.logo-wrap { margin-bottom: 22px; }
+
+#org-logo {
+  width: 130px;
+  height: 130px;
+  object-fit: contain;
+  border-radius: 24px;
+  background: rgba(249,246,238,.97);
+  padding: 10px;
+  box-shadow: var(--sh-float);
+  max-width: 90vw;
+}
+
+/* Headings */
+#dynamic-heading {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: clamp(1.9rem, 5vw, 3.1rem);
+  font-weight: 700;
+  color: var(--ivory);
+  line-height: 1.18;
+  text-wrap: balance;
+  margin-bottom: 8px;
+  letter-spacing: -.015em;
+  text-shadow: 0 2px 28px rgba(0,0,0,.28);
+}
+
+.app-sub {
+  font-size: .86rem;
+  font-weight: 400;
+  color: rgba(237,232,217,.6);
+  letter-spacing: .04em;
+  margin-bottom: 52px;
+}
+
+/* ─────────────────────────────────────────────────────────
+   RATING BUTTONS
+───────────────────────────────────────────────────────── */
+.rating-container {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: clamp(6px, 1.1vw, 16px);
+  width: 100%;
+  max-width: 1200px;
+  padding: 0 8px;
+}
+
+.rating-btn {
+  position: relative;
+  flex: 1 1 0;
+  max-width: 650px;
+  min-width: 0;
+  height: 220px;
+  background: var(--ivory);
+  border: 2px solid transparent;
+  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  cursor: pointer;
+  padding: 18px 14px;
+  box-shadow: var(--sh-float);
+  transition: transform var(--dur-mid) var(--ease-spring),
+              box-shadow var(--dur-mid) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+}
+
+/* Tinted hover shimmer */
+.rating-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: var(--btn-tint, transparent);
+  transition: opacity var(--dur-mid);
+  border-radius: inherit;
+}
+
+.rating-btn:hover { transform: translateY(-10px) scale(1.04); }
+.rating-btn:hover::before { opacity: 1; }
+.rating-btn:active { transform: translateY(-2px) scale(.99); transition-duration: .08s; }
+
+.very-good { --btn-tint: rgba(27,77,62,.07); }
+.good      { --btn-tint: rgba(46,107,82,.07); }
+.satisfact { --btn-tint: rgba(181,129,61,.07); }
+.poor      { --btn-tint: rgba(146,43,33,.07); }
+.very-poor { --btn-tint: rgba(107,26,26,.07); }
+
+.rating-btn.very-good:hover  { border-color: var(--c-very-good); box-shadow: 0 20px 50px rgba(27,77,62,.24); }
+.rating-btn.good:hover       { border-color: var(--c-good);      box-shadow: 0 20px 50px rgba(46,107,82,.22); }
+.rating-btn.satisfact:hover  { border-color: var(--c-satisfact); box-shadow: 0 20px 50px rgba(181,129,61,.24); }
+.rating-btn.poor:hover       { border-color: var(--c-poor);      box-shadow: 0 20px 50px rgba(146,43,33,.24); }
+.rating-btn.very-poor:hover  { border-color: var(--c-very-poor); box-shadow: 0 20px 50px rgba(107,26,26,.22); }
+
+.rating-emoji {
+  font-size: clamp(2.9rem, 4.7vw, 5.1rem);
+  line-height: 1;
+  position: relative; z-index: 1;
+  display: block;
+  transition: transform var(--dur-mid) var(--ease-spring);
+}
+
+.rating-btn:hover .rating-emoji { transform: scale(1.18); }
+
+.rating-label {
+  font-size: clamp(1.35rem, 1.9vw, 1.72rem);
+  font-weight: 700;
+  color: var(--ink);
+  position: relative; z-index: 1;
+  letter-spacing: .01em;
+}
+
+/* ─────────────────────────────────────────────────────────
+   MODAL SHELL
+───────────────────────────────────────────────────────── */
+
+/* Constrain dialog to a comfortable reading width & height */
+/* ── Modal open/close smooth animation ── */
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes modalSlideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(24px) scale(.97);
+  }
+}
+
+.modal.fade .modal-dialog {
+  transform: translateY(32px) scale(.97);
+  transition: transform .32s cubic-bezier(.34,1.24,.64,1),
+              opacity   .28s var(--ease);
+  opacity: 0;
+}
+
+.modal.show .modal-dialog {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+/* Backdrop fade */
+.modal-backdrop.fade       { opacity: 0; transition: opacity .28s var(--ease); }
+.modal-backdrop.show       { opacity: .55; }
+
+.modal-dialog {
+  max-width: 880px !important;
+  width: calc(100% - 32px);
+  max-height: 90vh;
+}
+
+/* Scrollable inner body respects the viewport */
+.modal-dialog-scrollable .modal-content {
+  max-height: 88vh;
+}
+
+.modal-content {
+  background: var(--ivory) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-xl) !important;
+  padding: 0 !important;
+  box-shadow: var(--sh-modal) !important;
+  overflow: hidden;
+  transition: box-shadow .28s var(--ease);
+}
+
+/* Colored top stripe */
+.modal-stripe {
+  height: 4px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.modal-stripe.pos { background: linear-gradient(90deg, var(--verdant), var(--verdant-lit)); }
+.modal-stripe.neg { background: linear-gradient(90deg, var(--error), var(--error-mid)); }
+
+/* Modal head */
+.m-head {
+  padding: 22px 28px 12px;
+}
+
+.feedback-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 100px;
+  font-size: .71rem;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.badge-pos {
+  background: var(--sage-fill);
+  color: var(--verdant);
+  border: 1px solid rgba(27,77,62,.18);
+}
+
+.badge-neg {
+  background: var(--error-lit);
+  color: var(--error);
+  border: 1px solid rgba(146,43,33,.18);
+}
+
+.m-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+/* Modal body */
+.m-body {
+  padding: 6px 28px 28px;
+}
+
+.notice-strip {
+  padding: 11px 14px;
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  border-left: 3px solid;
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.notice-strip.neg {
+  background: var(--error-lit);
+  border-left-color: var(--error);
+  color: var(--error);
+}
+
+.notice-strip.pos {
+  background: var(--sage-fill);
+  border-left-color: var(--verdant);
+  color: var(--verdant);
+}
+
+/* Section label */
+.sec-label {
+  font-size: .69rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--ink-muted);
+  margin-bottom: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sec-label .light { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* ─────────────────────────────────────────────────────────
+   CATEGORY CHECKBOXES  ★  HERO FEATURE
+   Pure CSS :has() — zero JS toggle — Chromium native
+───────────────────────────────────────────────────────── */
+#category-checkboxes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.category-card-item {
+  position: relative;
+  background: var(--white);
+  border: 2px solid var(--border);
+  border-radius: 100px;
+  padding: 13px 28px 13px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background     var(--dur-fast) var(--ease),
+    border-color   var(--dur-fast) var(--ease),
+    box-shadow     var(--dur-fast) var(--ease),
+    transform      var(--dur-fast) var(--ease);
+}
+
+/* Hover — unselected only */
+.category-card-item:hover:not(:has(input:checked)) {
+  border-color: var(--verdant-mid);
+  background: var(--sage-fill);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(27,77,62,.1);
+}
+
+/* ★ SELECTED — full heritage-green flood */
+.category-card-item:has(input:checked) {
+  background: var(--verdant);
+  border-color: var(--verdant);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 20px rgba(27,77,62,.3);
+}
+
+.category-card-item:has(input:checked):hover {
+  background: var(--verdant-mid);
+  border-color: var(--verdant-mid);
+}
+
+/* Invisible native checkbox */
+.category-card-item input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+  pointer-events: none;
+}
+
+/* Serial number badge */
+.cat-serial {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--parchment);
+  border: 2px solid var(--border-mid);
+  color: var(--ink-mid);
+  font-size: .9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background   var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color        var(--dur-fast) var(--ease);
+}
+
+.category-card-item:has(input:checked) .cat-serial {
+  background: rgba(255,255,255,.22);
+  border-color: rgba(255,255,255,.45);
+  color: #fff;
+}
+
+/* Label */
+.cat-label {
+  font-size: 1.42rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  cursor: pointer;
+  line-height: 1.3;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.category-card-item:has(input:checked) .cat-label { color: #fff; }
+
+/* ─────────────────────────────────────────────────────────
+   COMMENT TEXTAREA
+───────────────────────────────────────────────────────── */
+#comment-section {
+  display: block;
+  margin-top: 14px;
+}
+
+#comment {
+  width: 100%;
+  min-height: 108px;
+  padding: 13px 15px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--white);
+  font-family: inherit;
+  font-size: .9rem;
+  color: var(--ink);
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease),
+              box-shadow   var(--dur-fast) var(--ease);
+}
+
+#comment:focus {
+  border-color: var(--verdant);
+  box-shadow: 0 0 0 3px rgba(27,77,62,.1);
+}
+
+/* ─────────────────────────────────────────────────────────
+   DIVIDER
+───────────────────────────────────────────────────────── */
+.m-divider {
+  height: 1px;
+  background: var(--parchment);
+  margin: 18px 0;
+}
+
+/* ─────────────────────────────────────────────────────────
+   AUDIO RECORD
+───────────────────────────────────────────────────────── */
+.audio-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--parchment);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+}
+
+#audio-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  padding: 8px 15px;
+  border-radius: var(--r-xs);
+  font-family: inherit;
+  font-size: .83rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--dur-fast), color var(--dur-fast),
+              background var(--dur-fast);
+}
+
+#audio-record-btn:hover { border-color: var(--error-mid); color: var(--error-mid); }
+#audio-record-btn.recording { background: var(--error-mid); border-color: var(--error-mid); color: #fff; }
+
+#audio-timer {
+  font-size: .8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: var(--error);
+  color: #fff;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .05em;
+}
+
+#audio-playback-container { margin-top: 10px; }
+#audio-playback { width: 100%; height: 36px; border-radius: var(--r-xs); }
+
+/* ─────────────────────────────────────────────────────────
+   POSITIVE VIEW CARD
+───────────────────────────────────────────────────────── */
+.positive-card {
+  background: var(--sage-fill);
+  border: 1px solid rgba(27,77,62,.15);
+  border-radius: var(--r-md);
+  padding: 28px 20px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.positive-icon { font-size: 3rem; line-height: 1; display: block; margin-bottom: 12px; }
+
+#positive-msg {
+  font-size: .94rem;
+  color: var(--verdant);
+  font-weight: 600;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────
+   MODAL ACTION BUTTONS
+───────────────────────────────────────────────────────── */
+.m-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.btn-m {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 18px;
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: .91rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              transform  var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease),
+              border-color var(--dur-fast);
+}
+
+.btn-cancel {
+  background: var(--parchment);
+  border-color: var(--border);
+  color: var(--ink-mid);
+}
+
+.btn-cancel:hover { background: var(--border); color: var(--ink); }
+
+.btn-submit {
+  background: var(--verdant);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(27,77,62,.28);
+}
+
+.btn-submit:hover {
+  background: var(--verdant-mid);
+  transform: translateY(-1px);
+  box-shadow: 0 7px 22px rgba(27,77,62,.35);
+}
+
+.btn-submit:active { transform: translateY(0); }
+
+/* ─────────────────────────────────────────────────────────
+   DEVELOPER CREDIT
+───────────────────────────────────────────────────────── */
+.dev-credit {
+  position: fixed;
+  bottom: 12px;
+  left: 16px;
+  font-size: 11px;
+  color: rgba(255,255,255,.28);
+  z-index: 5;
+  letter-spacing: .04em;
+  pointer-events: none;
+}
+
+.dev-credit strong { color: rgba(255,255,255,.48); }
+
+/* ─────────────────────────────────────────────────────────
+   SCROLLBAR
+───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-mid); }
+
+/* ─────────────────────────────────────────────────────────
+   RESPONSIVE
+───────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .rating-btn { max-width: 160px; height: auto; min-height: 180px; padding: 14px 10px; }
+  /* emoji & label already scale via clamp — no override needed */
+  .m-head { padding: 18px 18px 10px; }
+  .m-body { padding: 6px 18px 22px; }
+  .m-actions { grid-template-columns: 1fr; }
+  #login-section { padding: 38px 28px; margin: 20px; }
+}
+
+@media (max-width: 380px) {
+  .rating-btn { flex: 1 1 80px; min-width: 80px; }
+  #login-section { padding: 32px 20px; margin: 14px; }
+}
+
+/* Motion safety */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+</style>
+</head>
+
+<body class="full-bg">
+
+<div class="dev-credit">Developed by <strong>Code Station 23</strong></div>
+
+<!-- ══════════════════════════════════════════════════════
+     LOGIN
+═══════════════════════════════════════════════════════ -->
+<div id="login-section">
+  <div class="login-brand">
+    <div class="login-icon-wrap">
+      <i class="fas fa-hospital-alt"></i>
+    </div>
+    <h4>অ্যাডমিন প্যানেল</h4>
+    <p>আপনার অ্যাকাউন্টে প্রবেশ করুন</p>
+  </div>
+
+  <div class="field">
+    <label for="email">ইমেইল</label>
+    <input type="email" id="email" class="field-input" placeholder="admin@example.com">
+  </div>
+
+  <div class="field">
+    <label for="password">পাসওয়ার্ড</label>
+    <div class="field-wrap">
+      <input type="password" id="password" class="field-input padded-right" placeholder="••••••••">
+      <button class="eye-btn" type="button" onclick="togglePassword()" aria-label="পাসওয়ার্ড দেখুন">
+        <i class="fas fa-eye" id="eyeIcon"></i>
+      </button>
+    </div>
+  </div>
+
+  <button class="btn-login" onclick="adminLogin()">
+    <i class="fas fa-sign-in-alt"></i>
+    প্রবেশ করুন
+  </button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     FEEDBACK APP
+═══════════════════════════════════════════════════════ -->
+<div id="feedback-app">
+  <div class="top-marquee">
+    <div id="dynamic-marquee-text">লোড হচ্ছে...</div>
+  </div>
+
+  <div class="app-stage">
+    <div class="logo-wrap">
+      <img id="org-logo" src="" style="display:none;" alt="প্রতিষ্ঠানের লোগো">
+    </div>
+
+    <h1 id="dynamic-heading">আমাদের সেবার মান কেমন ছিল?</h1>
+    <p class="app-sub">আপনার মতামত আমাদের সেবা উন্নত করতে সাহায্য করে</p>
+
+    <div class="rating-container">
+      <button class="rating-btn very-good" onclick="openModal('very_good')">
+        <span class="rating-emoji">😍</span>
+        <span class="rating-label">খুব ভালো</span>
+      </button>
+      <button class="rating-btn good" onclick="openModal('good')">
+        <span class="rating-emoji">☺️</span>
+        <span class="rating-label">ভালো</span>
+      </button>
+      <button class="rating-btn satisfact" onclick="openModal('satisfactory')">
+        <span class="rating-emoji">😐</span>
+        <span class="rating-label">সন্তোষজনক</span>
+      </button>
+      <button class="rating-btn poor" onclick="openModal('poor')">
+        <span class="rating-emoji">🙁</span>
+        <span class="rating-label">খারাপ</span>
+      </button>
+      <button class="rating-btn very-poor" onclick="openModal('very_poor')">
+        <span class="rating-emoji">😞</span>
+        <span class="rating-label">খুব খারাপ</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL
+═══════════════════════════════════════════════════════ -->
+<div class="modal fade" id="feedbackModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <!-- ── POSITIVE VIEW ──────────────────────────── -->
+      <div id="positive-feedback-view" class="d-none">
+        <div class="modal-stripe pos"></div>
+        <div class="m-head">
+          <span class="feedback-badge badge-pos">
+            <i class="fas fa-star fa-xs"></i> মূল্যবান মতামত
+          </span>
+          <h5 class="m-title">আপনার ইতিবাচক মতামতের<br>জন্য ধন্যবাদ!</h5>
+        </div>
+        <div class="m-body">
+          <div class="positive-card">
+            <span class="positive-icon">🎉</span>
+            <p id="positive-msg">
+              ফিডব্যাক জমা দিতে নিচের বাটনে ক্লিক করুন,<br>
+              বাতিল করতে বাতিল বাটনে ক্লিক করুন।
+            </p>
+          </div>
+          <div class="m-actions">
+            <button class="btn-m btn-cancel" data-bs-dismiss="modal">
+              <i class="fas fa-times"></i> বাতিল
+            </button>
+            <button class="btn-m btn-submit" onclick="submitPositiveFeedback()">
+              <i class="fas fa-paper-plane"></i> জমা দিন
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── NEGATIVE VIEW ──────────────────────────── -->
+      <div id="negative-feedback-view" class="d-none">
+        <div class="modal-stripe neg"></div>
+        <div class="m-head">
+          <span class="feedback-badge badge-neg">
+            <i class="fas fa-times-circle fa-xs"></i> খারাপ — মন্তব্য জানান
+          </span>
+          <h5 class="m-title">কোথায় সমস্যা হয়েছে জানান</h5>
+        </div>
+        <div class="m-body">
+
+          <div class="notice-strip neg">
+            আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।
+          </div>
+
+          <p class="sec-label">
+            <i class="fas fa-tags"></i>
+            কারণ নির্বাচন করুন
+            <span class="light">(একাধিক নির্বাচন করা যাবে)</span>
+          </p>
+
+          <div id="category-checkboxes">
+            <!-- Dynamic categories rendered by JS -->
+          </div>
+
+          <!-- Comment box — visible only when "Other" selected -->
+          <div id="comment-section">
+            <div class="m-divider"></div>
+            <p class="sec-label">
+              <i class="fas fa-pen"></i>
+              অন্য কারণ থাকলে এখানে লিখুন অথবা ভয়েস রেকর্ড করুন
+              <span class="light">(ঐচ্ছিক)</span>
+            </p>
+            <textarea id="comment" placeholder="আপনার মতামত বিস্তারিত লিখুন..."></textarea>
+          </div>
+
+          <div class="m-divider"></div>
+
+          <!-- Voice record -->
+          <div id="audio-record-section">
+            <p class="sec-label">
+              <i class="fas fa-microphone-alt" style="color:var(--error);"></i>
+              ভয়েস মেসেজ
+              <span class="light">(ঐচ্ছিক)</span>
+            </p>
+            <div class="audio-box">
+              <button type="button" id="audio-record-btn" onclick="toggleAudioRecord()">
+                <i class="fas fa-circle" id="audio-mic-icon" style="color:var(--error);"></i>
+                <span id="audio-btn-text">রেকর্ড শুরু করুন</span>
+              </button>
+              <span id="audio-timer">00:00</span>
+            </div>
+            <div id="audio-playback-container" class="d-none">
+              <audio id="audio-playback" controls></audio>
+            </div>
+          </div>
+
+          <div class="m-actions">
+            <button id="cancelBtn" class="btn-m btn-cancel" data-bs-dismiss="modal">
+              <i class="fas fa-times"></i> বাতিল
+            </button>
+            <button class="btn-m btn-submit" onclick="submitFeedbackDirectly()">
+              <i class="fas fa-paper-plane"></i> ফিডব্যাক জমা দিন
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /.modal-content -->
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCRIPTS  (all IPC logic preserved exactly)
+═══════════════════════════════════════════════════════ -->
+<script>
+const { ipcRenderer } = require('electron');
+
+let selectedRating    = '';
+let currentOrgId      = null;
+let bsModal;
+
+let audioMediaRecorder;
+let audioChunksList   = [];
+let isAudioRecording  = false;
+let audioTimerInterval;
+let audioSeconds      = 0;
+let recordedAudioBuffer = null;
+const MAX_RECORD_TIME = 60;
+
+/* ── INIT ─────────────────────────────────────────── */
+window.addEventListener('DOMContentLoaded', async () => {
+  bsModal = new bootstrap.Modal(document.getElementById('feedbackModal'));
+
+  const loginStatus = await ipcRenderer.invoke('check-login-status');
+  if (loginStatus.loggedIn) {
+    currentOrgId = loginStatus.org_id;
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('feedback-app').style.display  = 'block';
+    loadData();
+  }
+});
+
+/* ── PASSWORD TOGGLE ──────────────────────────────── */
+function togglePassword() {
+  const pass = document.getElementById('password');
+  const icon = document.getElementById('eyeIcon');
+  const hide = pass.type === 'password';
+  pass.type   = hide ? 'text' : 'password';
+  icon.className = hide ? 'fas fa-eye-slash' : 'fas fa-eye';
+}
+
+/* ── LOGIN ────────────────────────────────────────── */
+async function adminLogin() {
+  const email    = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const res = await ipcRenderer.invoke('login-api', { email, password });
+
+  if (res.success) {
+    currentOrgId = res.org_id;
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('feedback-app').style.display  = 'block';
+    loadData();
+  } else {
+    Swal.fire({
+      icon: 'error',
+      title: 'লগইন ব্যর্থ',
+      text: res.message,
+      confirmButtonText: 'ঠিক আছে'
+    });
+  }
+}
+
+/* ── LOAD ORG DATA ────────────────────────────────── */
+async function loadData() {
+  if (!currentOrgId) return;
+
+  const logoUrl = await ipcRenderer.invoke('get-org-logo', currentOrgId);
+  const m       = await ipcRenderer.invoke('get-marquee', currentOrgId);
+
+  if (logoUrl) {
+    const img = document.getElementById('org-logo');
+    img.src = logoUrl;
+    img.style.display = 'block';
+  }
+
+  document.getElementById('dynamic-marquee-text').innerText = m.text;
+  document.getElementById('dynamic-heading').innerText       = m.heading;
+
+  loadCategoriesForOrg(currentOrgId);
+}
+
+/* ── CATEGORIES ───────────────────────────────────── */
+async function loadCategoriesForOrg(orgId) {
+  const container  = document.getElementById('category-checkboxes');
+  const cacheKey   = 'categories_' + orgId;
+  const cachedData = localStorage.getItem(cacheKey);
+
+  if (cachedData) {
+    try {
+      const parsed = JSON.parse(cachedData);
+      if (parsed && parsed.length > 0) renderCategories(parsed, container);
+    } catch (e) { console.error('Cache parse error', e); }
+  } else {
+    container.innerHTML =
+      '<div style="color:var(--ink-muted);padding:8px 0;font-size:.86rem;">লোড হচ্ছে...</div>';
+  }
+
+  try {
+    const categories = await ipcRenderer.invoke('get-org-categories', orgId);
+    if (categories && categories.length > 0) {
+      localStorage.setItem(cacheKey, JSON.stringify(categories));
+      renderCategories(categories, container);
+    }
+  } catch (error) {
+    if (!localStorage.getItem(cacheKey)) {
+      container.innerHTML =
+        '<span style="color:var(--ink-muted);font-size:.84rem;display:block;padding:8px 0;">' +
+        'ইন্টারনেট সংযোগ না থাকায় ক্যাটেগরি লোড হয়নি।</span>';
+    }
+  }
+}
+
+function renderCategories(categories, container) {
+  container.innerHTML = '';
+
+  const makeCard = (id, labelHTML, serial) => {
+    const div = document.createElement('div');
+    div.className = 'category-card-item';
+    div.innerHTML = `
+      <input type="checkbox" class="category-checkbox" value="${id}" id="cat_${id}">
+      <span class="cat-serial" aria-hidden="true">${serial}</span>
+      <span class="cat-label">${labelHTML}</span>
+    `;
+
+    /* Single reliable toggle: clicking anywhere on the pill toggles the checkbox.
+       Using <span> instead of <label for=...> prevents the native double-toggle. */
+    div.addEventListener('click', e => {
+      if (e.target.tagName === 'INPUT') return; // checkbox handles itself
+      const cb = div.querySelector('input');
+      cb.checked = !cb.checked;
+    });
+
+    return div;
+  };
+
+  categories.forEach((cat, i) => {
+    container.appendChild(makeCard(cat.id, cat.name, i + 1));
+  });
+}
+
+/* ── MODAL OPEN ───────────────────────────────────── */
+function openModal(r) {
+  selectedRating = r;
+
+  const posV = document.getElementById('positive-feedback-view');
+  const negV = document.getElementById('negative-feedback-view');
+
+  if (['very_good', 'good', 'satisfactory'].includes(r)) {
+    posV.classList.remove('d-none');
+    negV.classList.add('d-none');
+  } else {
+    posV.classList.add('d-none');
+    negV.classList.remove('d-none');
+    document.getElementById('comment').value = '';
+    resetAudioRecordState();
+    if (currentOrgId) loadCategoriesForOrg(currentOrgId);
+  }
+
+  bsModal.show();
+}
+
+/* ── AUDIO HELPERS ────────────────────────────────── */
+function resetAudioRecordState() {
+  if (isAudioRecording) stopAudioRecordingProcess();
+  isAudioRecording    = false;
+  recordedAudioBuffer = null;
+  clearInterval(audioTimerInterval);
+
+  document.getElementById('audio-timer').innerText    = '00:00';
+  document.getElementById('audio-btn-text').innerText = 'রেকর্ড শুরু করুন';
+
+  const mic = document.getElementById('audio-mic-icon');
+  mic.classList.remove('fa-beat');
+  mic.style.color = 'var(--error)';
+
+  document.getElementById('audio-playback-container').classList.add('d-none');
+  document.getElementById('audio-record-btn').classList.remove('recording');
+}
+
+const fmtTime = s =>
+  `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+async function toggleAudioRecord() {
+  if (!isAudioRecording) {
+    try {
+      const stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                       ? 'audio/webm;codecs=opus' : 'audio/webm';
+
+      audioMediaRecorder = new MediaRecorder(stream, { mimeType });
+      audioChunksList    = [];
+
+      audioMediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunksList.push(e.data);
+      };
+
+      audioMediaRecorder.onstop = async () => {
+        const blob = new Blob(audioChunksList, { type: mimeType });
+        recordedAudioBuffer = Buffer.from(await blob.arrayBuffer());
+        document.getElementById('audio-playback').src = URL.createObjectURL(blob);
+        document.getElementById('audio-playback-container').classList.remove('d-none');
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      audioMediaRecorder.start();
+      isAudioRecording    = true;
+      recordedAudioBuffer = null;
+
+      document.getElementById('audio-record-btn').classList.add('recording');
+      document.getElementById('audio-btn-text').innerText = 'রেকর্ড থামান';
+      document.getElementById('audio-mic-icon').classList.add('fa-beat');
+      document.getElementById('audio-playback-container').classList.add('d-none');
+
+      audioSeconds = 0;
+      document.getElementById('audio-timer').innerText = '00:00';
+
+      audioTimerInterval = setInterval(() => {
+        audioSeconds++;
+        document.getElementById('audio-timer').innerText = fmtTime(audioSeconds);
+
+        if (audioSeconds >= MAX_RECORD_TIME) {
+          stopAudioRecordingProcess();
+          Swal.fire({
+            toast: true, position: 'top-end', icon: 'info',
+            title: 'সর্বোচ্চ সময়সীমা (১ মিনিট) শেষ!',
+            showConfirmButton: false, timer: 3000
+          });
+        }
+      }, 1000);
+
+    } catch (err) {
+      Swal.fire({
+        icon: 'warning', title: 'মাইক্রোফোন',
+        text: 'মাইক্রোফোন এক্সেস পাওয়া যায়নি!'
+      });
+    }
+
+  } else {
+    stopAudioRecordingProcess();
+  }
+}
+
+function stopAudioRecordingProcess() {
+  if (audioMediaRecorder && isAudioRecording) {
+    audioMediaRecorder.stop();
+    isAudioRecording = false;
+  }
+  clearInterval(audioTimerInterval);
+  document.getElementById('audio-record-btn').classList.remove('recording');
+  document.getElementById('audio-btn-text').innerText = 'পুনরায় রেকর্ড করুন';
+  document.getElementById('audio-mic-icon').classList.remove('fa-beat');
+}
+
+/* ── SUBMIT ───────────────────────────────────────── */
+let isSubmitting = false;
+
+async function submitPositiveFeedback() {
+  if (isSubmitting) return;
+  isSubmitting = true;
+
+  const res = await ipcRenderer.invoke('save-feedback-offline', {
+    organization_id: currentOrgId,
+    org_id:          currentOrgId,
+    rating:          selectedRating,
+    comment:         '',
+    voiceBuffer:     null
+  });
+
+  if (res.status === 'success') {
+    bsModal.hide();
+    Swal.fire({
+      icon: 'success', title: 'ধন্যবাদ!',
+      text: res.message, timer: 1500, showConfirmButton: false
+    });
+  } else {
+    Swal.fire('দুঃখিত', res.message, 'error');
+  }
+
+  isSubmitting = false;
+}
+
+async function submitFeedbackDirectly() {
+  if (isSubmitting) return;
+
+  const commentText = document.getElementById('comment').value.trim();
+  const selectedCategories = [];
+
+  document.querySelectorAll('.category-checkbox:checked').forEach(cb => {
+    if (cb.value !== 'other') selectedCategories.push(parseInt(cb.value));
+  });
+
+  if (
+    ['poor', 'very_poor'].includes(selectedRating) &&
+    !recordedAudioBuffer &&
+    selectedCategories.length === 0 &&
+    !commentText
+  ) {
+    Swal.fire({
+      icon: 'warning',
+      text: 'দয়া করে কারণ সিলেক্ট করুন অথবা আপনার অভিজ্ঞতা লিখুন।',
+      confirmButtonText: 'ঠিক আছে'
+    });
+    return;
+  }
+
+  isSubmitting = true;
+
+  const res = await ipcRenderer.invoke('save-feedback-offline', {
+    organization_id: currentOrgId,
+    org_id:          currentOrgId,
+    rating:          selectedRating,
+    comment:         commentText,
+    category_ids:    selectedCategories,
+    voiceBuffer:     recordedAudioBuffer
+  });
+
+  if (res.status === 'success') {
+    bsModal.hide();
+    document.getElementById('comment').value = '';
+    resetAudioRecordState();
+    Swal.fire({
+      icon: 'success', title: 'ধন্যবাদ!',
+      text: res.message, timer: 1500, showConfirmButton: false
+    });
+  } else {
+    Swal.fire('ভুল বা ত্রুটি', res.message, 'error');
+  }
+
+  isSubmitting = false;
+}
+
+/* ── MODAL CLEANUP ────────────────────────────────── */
+document.getElementById('feedbackModal').addEventListener('hidden.bs.modal', () => {
+  document.getElementById('comment').value = '';
+  resetAudioRecordState();
+});
+
+/* ── SECURITY ─────────────────────────────────────── */
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  if (
+    e.keyCode === 123 ||
+    (e.ctrlKey && e.shiftKey && [73, 74, 67].includes(e.keyCode)) ||
+    (e.ctrlKey && e.keyCode === 85)
+  ) {
+    e.preventDefault();
+    return false;
+  }
+});
+</script>
+
+<script src="./js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

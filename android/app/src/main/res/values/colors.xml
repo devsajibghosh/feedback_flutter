@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Must match AppTokens.verdant (lib/theme/tokens.dart) -->
+    <color name="verdant">#FF1B4D3E</color>
+	<color name="ic_launcher_background">#1B4D3E</color>
+</resources>
