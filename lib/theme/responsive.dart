@@ -217,4 +217,9 @@ class Responsive {
   double get commentLabelSize => isExpanded ? 18.0 : (isMedium ? 16.0 : 15.0);
   double get commentLabelOptionalSize =>
       isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
+
+  // ── Success toast countdown (FIX-05 §3) — quieter than the thank-you
+  // line above it.
+  double get successCountdownSize =>
+      isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
 }

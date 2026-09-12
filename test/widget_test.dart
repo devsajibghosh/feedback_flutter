@@ -150,7 +150,8 @@ class _ScriptedApiService extends ApiService {
 /// A [SyncService] backed by an in-memory [_FakeDbService], for tests that
 /// render [FeedbackScreen]/[AppRoot] and just need submissions to work
 /// without touching real sqflite.
-SyncService _fakeSync(ApiService api) => SyncService(api: api, db: _FakeDbService());
+SyncService _fakeSync(ApiService api) =>
+    SyncService(api: api, db: _FakeDbService());
 
 /// Runs the test at roughly the app's real target size (a landscape
 /// tablet) instead of the default 800x600 test surface, so dialog content
@@ -345,9 +346,8 @@ void main() {
 
   for (var i = 0; i < kRatingSpecs.length; i++) {
     final spec = kRatingSpecs[i];
-    final expectedTitle = i < 3
-        ? 'আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'
-        : 'কেন সন্তুষ্ট হন নি?';
+    final expectedTitle =
+        i < 3 ? 'আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!' : 'কেন সন্তুষ্ট হন নি?';
 
     testWidgets(
       'rating "${spec.value}" opens the ${i < 3 ? "positive" : "negative"} dialog',
@@ -751,8 +751,10 @@ void main() {
         final summary = await sync.debugSummary();
 
         expect(summary.total, 19);
-        expect(summary.bySynced[1], 19, reason: 'the 19 sent rows are real, persisted DB rows');
-        expect(summary.bySynced[0] ?? 0, 0, reason: 'nothing is stuck pending — no feedback was lost');
+        expect(summary.bySynced[1], 19,
+            reason: 'the 19 sent rows are real, persisted DB rows');
+        expect(summary.bySynced[0] ?? 0, 0,
+            reason: 'nothing is stuck pending — no feedback was lost');
         expect(
           summary.lastSuccessfulSync,
           isNull,
@@ -1326,7 +1328,8 @@ void main() {
       expect(text.maxLines, isNull, reason: 'must never truncate');
 
       // Below the rating row, not above or beside it.
-      final rowBottom = tester.getBottomLeft(find.byType(RatingButton).first).dy;
+      final rowBottom =
+          tester.getBottomLeft(find.byType(RatingButton).first).dy;
       final helperTop = tester.getTopLeft(find.text(helperText)).dy;
       expect(helperTop, greaterThanOrEqualTo(rowBottom));
     });
@@ -1507,8 +1510,7 @@ void main() {
 
         expect(find.text('ধন্যবাদ!'), findsOneWidget);
 
-        tester.binding
-            .handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
         await tester.pump();
         expect(find.text('ধন্যবাদ!'), findsNothing);
 
@@ -1518,6 +1520,97 @@ void main() {
         await tester.pump(const Duration(seconds: 5));
         expect(find.text('ধন্যবাদ!'), findsNothing);
         await tester.pump(const Duration(seconds: 2));
+      },
+    );
+  });
+
+  group('FIX-05 §3: success toast countdown', () {
+    testWidgets(
+      'counts down once per second and the toast is gone by 4s',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(find.text('জমা দিন'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('ধন্যবাদ!'), findsOneWidget);
+        expect(
+            find.text('৪ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+            find.text('৩ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsOneWidget);
+        expect(
+            find.text('৪ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsNothing);
+
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+            find.text('২ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+            find.text('১ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsOneWidget);
+
+        // The toast's own 4000ms timer (owned by the screen, not the
+        // countdown) removes it right after — the countdown never runs
+        // past ১ on its own.
+        await tester.pump(const Duration(milliseconds: 1100));
+        expect(find.text('ধন্যবাদ!'), findsNothing);
+        expect(
+            find.text('১ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsNothing);
+
+        await tester.pump(const Duration(seconds: 2));
+      },
+    );
+
+    testWidgets(
+      'tapping the toast early cancels the countdown timer with no leak',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(find.text('জমা দিন'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(
+            find.text('৪ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'), findsOneWidget);
+
+        // Dismissed well before the countdown would reach ১ on its own —
+        // if the periodic timer weren't cancelled in dispose(), the test
+        // framework's own pending-timer teardown check would fail this
+        // test.
+        await tester.tap(find.text('ধন্যবাদ!'));
+        await tester.pump();
+        expect(find.text('ধন্যবাদ!'), findsNothing);
+
+        await tester.pump(const Duration(seconds: 6));
       },
     );
   });
@@ -1581,7 +1674,8 @@ void main() {
       expect(find.text('কেন সন্তুষ্ট হন নি?'), findsNothing);
     });
 
-    testWidgets('tapping the barrier does nothing', (WidgetTester tester) async {
+    testWidgets('tapping the barrier does nothing',
+        (WidgetTester tester) async {
       _useTabletSize(tester);
       SharedPreferences.setMockInitialValues({'org_id': 7});
       final api = _FakeApiService();
@@ -1624,7 +1718,8 @@ void main() {
       expect(find.byType(FeedbackScreen), findsOneWidget);
     });
 
-    testWidgets('the back button inside an open dialog closes it and nothing more',
+    testWidgets(
+        'the back button inside an open dialog closes it and nothing more',
         (WidgetTester tester) async {
       _useTabletSize(tester);
       SharedPreferences.setMockInitialValues({'org_id': 7});
@@ -1667,7 +1762,8 @@ void main() {
         await tester.tap(find.byType(RatingButton).first);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
-        expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
+        expect(
+            find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
 
         FeedbackDialogGuard.closeActiveDialog();
         await tester.pump();
@@ -1678,7 +1774,8 @@ void main() {
       },
     );
 
-    test('FeedbackDialogGuard.closeActiveDialog() is a no-op with no dialog open',
+    test(
+        'FeedbackDialogGuard.closeActiveDialog() is a no-op with no dialog open',
         () {
       expect(FeedbackDialogGuard.closeActiveDialog, returnsNormally);
     });
@@ -1737,7 +1834,8 @@ void main() {
       expect(label.maxLines, isNull);
     });
 
-    testWidgets('10+ categories scroll within the dialog instead of overflowing',
+    testWidgets(
+        '10+ categories scroll within the dialog instead of overflowing',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(412, 915);
       tester.view.devicePixelRatio = 1.0;
@@ -2078,8 +2176,7 @@ void main() {
       'a malformed/non-JSON response (a captive-portal page, say) is '
       'treated as a failure, never parsed as success',
       () async {
-        final server =
-            await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         addTearDown(() => server.close(force: true));
         server.listen((request) async {
           request.response

@@ -260,7 +260,8 @@ class _FeedbackScreenState extends State<FeedbackScreen>
                                 : responsive.gap(52),
                           ),
                           _RatingRow(onSelect: _handleRatingTap),
-                          if (!responsive.isShortHeight) const _RatingHelperText(),
+                          if (!responsive.isShortHeight)
+                            const _RatingHelperText(),
                         ],
                       ),
                     ),
@@ -451,17 +452,56 @@ class _RatingHelperText extends StatelessWidget {
 /// modal (FIX-03 §2): tapping it dismisses it early; tapping anywhere else —
 /// including a rating card behind it — reaches whatever's underneath, since
 /// there's no barrier at all, only this centred card.
-class _SuccessToast extends StatelessWidget {
+class _SuccessToast extends StatefulWidget {
   const _SuccessToast({required this.message, required this.onTap});
 
   final String message;
   final VoidCallback onTap;
 
   @override
+  State<_SuccessToast> createState() => _SuccessToastState();
+}
+
+class _SuccessToastState extends State<_SuccessToast> {
+  /// FIX-05 §3: the four countdown lines, one per second, precomposed so no
+  /// runtime string-splicing of the Bengali text is needed. Index 0 is the
+  /// initial ৪-second line; the timer advances through to index 3 (১) and
+  /// then stops — the toast itself is dismissed by the parent's own 4000ms
+  /// timer right after.
+  static const _countdownLines = [
+    '৪ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি',
+    '৩ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি',
+    '২ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি',
+    '১ সেকেন্ড পর হোম স্ক্রিনে ফিরে যাচ্ছি'
+  ];
+
+  int _tick = 0;
+  Timer? _countdownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_tick >= _countdownLines.length - 1) {
+        _countdownTimer?.cancel();
+        return;
+      }
+      setState(() => _tick++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final responsive = Responsive.of(context);
     return Center(
       child: GestureDetector(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Material(
           color: AppTokens.ivory,
           elevation: 8,
@@ -492,13 +532,25 @@ class _SuccessToast extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  message,
+                  widget.message,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontFamily: AppTheme.bodyFontFamily,
                     fontFamilyFallback: AppTheme.bengaliFallback,
                     fontSize: 14,
                     color: AppTokens.inkMid,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _countdownLines[_tick],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontFamilyFallback: AppTheme.bengaliFallback,
+                    fontSize: responsive.successCountdownSize,
+                    fontWeight: FontWeight.w400,
+                    color: AppTokens.inkMuted,
                   ),
                 ),
               ],
