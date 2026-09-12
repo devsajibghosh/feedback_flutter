@@ -1230,9 +1230,8 @@ void main() {
 
   group('FIX-03 §5: card typography — emoji leads, text confirms', () {
     testWidgets(
-      'emoji is ~2.2x the Bengali label, the English sub-label renders '
-      'smaller than it, and all five cards stay the same height — at '
-      'compact, medium, and expanded',
+      'emoji is ~2.2x the Bengali label and all five cards stay the same '
+      'height — at compact, medium, and expanded',
       (WidgetTester tester) async {
         SharedPreferences.setMockInitialValues({'org_id': 7});
         final api = _FakeApiService();
@@ -1257,10 +1256,6 @@ void main() {
               tester.widget<Text>(find.text(spec.emoji)).style!.fontSize!;
           final labelSize =
               tester.widget<Text>(find.text(spec.label)).style!.fontSize!;
-          final subSize = tester
-              .widget<Text>(find.text(spec.englishLabel))
-              .style!
-              .fontSize!;
 
           expect(
             emojiSize / labelSize,
@@ -1268,7 +1263,6 @@ void main() {
             reason: 'at ${size.width.toInt()}x${size.height.toInt()}: '
                 'emoji=$emojiSize label=$labelSize',
           );
-          expect(subSize, lessThan(labelSize));
 
           final cardHeights = tester
               .renderObjectList<RenderBox>(find.byType(RatingButton))
@@ -1278,6 +1272,33 @@ void main() {
               reason: 'all five rating cards must be exactly the same height');
 
           expect(tester.takeException(), isNull);
+        }
+      },
+    );
+  });
+
+  group('FIX-05 §5: English sub-labels removed', () {
+    testWidgets(
+      'none of Excellent/Good/Satisfactory/Poor/Very poor appear anywhere '
+      'on the rating screen',
+      (WidgetTester tester) async {
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        for (final english in [
+          'Excellent',
+          'Good',
+          'Satisfactory',
+          'Poor',
+          'Very poor',
+        ]) {
+          expect(find.text(english), findsNothing);
         }
       },
     );

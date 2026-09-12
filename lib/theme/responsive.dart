@@ -70,26 +70,22 @@ class Responsive {
   /// 30/25/21 — the label the emoji's size now leads over.
   double get ratingLabelSize => isExpanded ? 30.0 : (isMedium ? 25.0 : 21.0);
 
-  /// The English sub-label (FIX-03 §5): 16/14/12, "about half the Bengali
-  /// size."
-  double get ratingEnglishSubSize => isExpanded ? 16.0 : (isMedium ? 14.0 : 12.0);
-
-  /// Tall enough to comfortably fit the emoji + both labels at the sizes
-  /// above with no clipping, at every one of the 8 SPEC-RESPONSIVE.md test
-  /// sizes including short-height/landscape — FIX-03 §5 explicitly prefers
+  /// Tall enough to comfortably fit the emoji + label at the sizes above
+  /// with no clipping, at every one of the 8 SPEC-RESPONSIVE.md test sizes
+  /// including short-height/landscape — FIX-03 §5 explicitly prefers
   /// growing the card over shrinking the type ("if the larger type breaks
   /// [the near-square aspect], grow the card rather than shrink the type"),
   /// so unlike the old formula this is no longer clamped down for
   /// [isShortHeight]. All five cards share this one value, so they stay
   /// exactly the same height regardless of how much any one label's
-  /// [FittedBox] has to shrink to fit its own card's width.
+  /// [FittedBox] has to shrink to fit its own card's width. FIX-05 §5
+  /// dropped the English sub-label's own term entirely (rather than
+  /// zeroing it out) now that there's no third line to make room for.
   double get ratingButtonHeight {
     final vertical = ratingButtonPadding.vertical;
     final content = ratingEmojiSize * 1.15 +
         13 + // gap below the emoji
-        ratingLabelSize * 1.3 +
-        3 + // gap below the Bengali label
-        ratingEnglishSubSize * 1.3;
+        ratingLabelSize * 1.3;
     return vertical + content;
   }
 

@@ -11,18 +11,12 @@ class RatingSpec {
   const RatingSpec({
     required this.emoji,
     required this.label,
-    required this.englishLabel,
     required this.value,
     required this.accent,
   });
 
   final String emoji;
   final String label;
-
-  /// FIX-03 §5's "English sub" line, confirmed in FIX-04 §5 as: Excellent /
-  /// Good / Satisfactory / Poor / Very poor.
-  final String englishLabel;
-
   final String value;
   final Color accent;
 }
@@ -31,35 +25,30 @@ const List<RatingSpec> kRatingSpecs = [
   RatingSpec(
     emoji: '😍',
     label: 'খুব ভালো',
-    englishLabel: 'Excellent',
     value: 'very_good',
     accent: AppTokens.cVeryGood,
   ),
   RatingSpec(
     emoji: '☺️',
     label: 'ভালো',
-    englishLabel: 'Good',
     value: 'good',
     accent: AppTokens.cGood,
   ),
   RatingSpec(
     emoji: '😐',
     label: 'সন্তোষজনক',
-    englishLabel: 'Satisfactory',
     value: 'satisfactory',
     accent: AppTokens.cSatisfact,
   ),
   RatingSpec(
     emoji: '🙁',
     label: 'খারাপ',
-    englishLabel: 'Poor',
     value: 'poor',
     accent: AppTokens.cPoor,
   ),
   RatingSpec(
     emoji: '😞',
     label: 'খুব খারাপ',
-    englishLabel: 'Very poor',
     value: 'very_poor',
     accent: AppTokens.cVeryPoor,
   ),
@@ -224,30 +213,6 @@ class _RatingButtonState extends State<RatingButton>
                                       color: AppTokens.ink,
                                       letterSpacing:
                                           responsive.ratingLabelSize * 0.01,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            // The English sub-label (FIX-03 §5): confirms
-                            // what the emoji+Bengali already conveyed, so it
-                            // shrinks rather than clips too, same as above.
-                            Flexible(
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    widget.spec.englishLabel,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.visible,
-                                    style: TextStyle(
-                                      fontFamily: AppTheme.bodyFontFamily,
-                                      fontSize: responsive.ratingEnglishSubSize,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppTokens.inkMuted,
                                     ),
                                   ),
                                 ),
