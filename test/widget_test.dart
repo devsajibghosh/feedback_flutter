@@ -1011,6 +1011,10 @@ void main() {
       const Size(640, 360), // small phone, landscape
       const Size(412, 915), // large phone, portrait
       const Size(915, 412), // large phone, landscape
+      const Size(800, 1280), // 7" tablet, portrait
+      const Size(1280, 800), // 7" tablet, landscape
+      const Size(1200, 1920), // 10" tablet, portrait
+      const Size(1920, 1200), // 10" tablet, landscape
     ]) {
       testWidgets(
         'negative dialog with keyboard open at '
@@ -1510,9 +1514,13 @@ void main() {
       await tester.pump();
 
       // Back-to-back, before the first tap's async dialog-open work has a
-      // chance to complete.
+      // chance to complete. The second tap's coordinate may already land
+      // on the opening dialog rather than the button underneath it — that
+      // is the realistic scenario this test exists to cover, so the
+      // harness's "didn't hit the widget you searched for" warning is
+      // expected here, not a sign of anything wrong.
       await tester.tap(find.byType(RatingButton).first);
-      await tester.tap(find.byType(RatingButton).first);
+      await tester.tap(find.byType(RatingButton).first, warnIfMissed: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
@@ -1531,9 +1539,13 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      // The first tap starts opening a dialog, so the later taps' target
+      // buttons are realistically already covered by it by the time they
+      // land — expected here, not a sign of anything wrong (same as the
+      // double-tap test above).
       await tester.tap(find.byType(RatingButton).at(0));
-      await tester.tap(find.byType(RatingButton).at(1));
-      await tester.tap(find.byType(RatingButton).at(4));
+      await tester.tap(find.byType(RatingButton).at(1), warnIfMissed: false);
+      await tester.tap(find.byType(RatingButton).at(4), warnIfMissed: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
