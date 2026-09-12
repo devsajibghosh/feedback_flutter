@@ -60,15 +60,16 @@ class Responsive {
     return lerpDouble(compact, expandedAt840, t)!;
   }
 
-  // ── Rating buttons (§4.1, typography FIX-03 §5) ─────────────────────
-  /// Emoji leads at roughly 2.2x the Bengali label, three fixed steps (not
+  // ── Rating buttons (§4.1, typography FIX-03 §5, bumped FIX-05 §4) ────
+  /// Emoji leads at roughly 2.3x the Bengali label, three fixed steps (not
   /// the smooth interpolation most other sizes here use, since FIX-03 §5
-  /// asks for exact values "at every breakpoint") — 68/56/46 across
-  /// expanded/medium/compact.
-  double get ratingEmojiSize => isExpanded ? 68.0 : (isMedium ? 56.0 : 46.0);
+  /// asks for exact values "at every breakpoint") — 84/70/58 across
+  /// expanded/medium/compact. FIX-05 §4 bumped these up from 68/56/46 now
+  /// that removing the English sub-label (§5) frees the vertical space.
+  double get ratingEmojiSize => isExpanded ? 84.0 : (isMedium ? 70.0 : 58.0);
 
-  /// 30/25/21 — the label the emoji's size now leads over.
-  double get ratingLabelSize => isExpanded ? 30.0 : (isMedium ? 25.0 : 21.0);
+  /// 36/30/25 — the label the emoji's size now leads over.
+  double get ratingLabelSize => isExpanded ? 36.0 : (isMedium ? 30.0 : 25.0);
 
   /// Tall enough to comfortably fit the emoji + label at the sizes above
   /// with no clipping, at every one of the 8 SPEC-RESPONSIVE.md test sizes
