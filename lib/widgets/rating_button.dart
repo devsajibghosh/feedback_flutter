@@ -19,12 +19,8 @@ class RatingSpec {
   final String emoji;
   final String label;
 
-  /// FIX-03 §5's "English sub" line. Not specified anywhere in SPEC.md or
-  /// any FIX-*.md — the table gives sizes and a colour but never the actual
-  /// wording. This uses the plain English gloss of [value], the one
-  /// wording already canonical elsewhere in this codebase, rather than
-  /// inventing new copy; flagged in PROGRESS.md as a judgment call to
-  /// confirm or override.
+  /// FIX-03 §5's "English sub" line, confirmed in FIX-04 §5 as: Excellent /
+  /// Good / Satisfactory / Poor / Very poor.
   final String englishLabel;
 
   final String value;
@@ -35,7 +31,7 @@ const List<RatingSpec> kRatingSpecs = [
   RatingSpec(
     emoji: '😍',
     label: 'খুব ভালো',
-    englishLabel: 'Very Good',
+    englishLabel: 'Excellent',
     value: 'very_good',
     accent: AppTokens.cVeryGood,
   ),
@@ -63,7 +59,7 @@ const List<RatingSpec> kRatingSpecs = [
   RatingSpec(
     emoji: '😞',
     label: 'খুব খারাপ',
-    englishLabel: 'Very Poor',
+    englishLabel: 'Very poor',
     value: 'very_poor',
     accent: AppTokens.cVeryPoor,
   ),
