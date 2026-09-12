@@ -1851,7 +1851,64 @@ void main() {
         expect(find.text('খারাপ — মন্তব্য জানান'), findsNothing);
         expect(find.text('কারণ নির্বাচন করুন'), findsNothing);
         expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
-        expect(find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'FIX-05 §1: the rating\'s own Bengali name renders under the emoji',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        // kRatingSpecs[3] is 'poor'.
+        await tester.tap(find.byType(RatingButton).at(3));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        final dialog = find.byType(NegativeDialogContent);
+        expect(
+          find.descendant(of: dialog, matching: find.text('খারাপ')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: dialog, matching: find.text('খুব খারাপ')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'FIX-05 §1: very_poor renders খুব খারাপ, not খারাপ',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        // kRatingSpecs[4] is 'very_poor'.
+        await tester.tap(find.byType(RatingButton).at(4));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        final dialog = find.byType(NegativeDialogContent);
+        expect(
+          find.descendant(of: dialog, matching: find.text('খুব খারাপ')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -1875,7 +1932,16 @@ void main() {
         await tester.pump(const Duration(milliseconds: 350));
         await tester.pump();
 
+        // Scoped to the dialog: the rating screen behind it still has its
+        // own same-emoji, same-label RatingButton mounted, which would
+        // double-count an unscoped find.
+        final dialog = find.byType(NegativeDialogContent);
+
         expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
+        expect(
+          find.descendant(of: dialog, matching: find.text('খুব খারাপ')),
+          findsOneWidget,
+        );
 
         tester.view.viewInsets = const FakeViewPadding(bottom: 500);
         addTearDown(tester.view.resetViewInsets);
@@ -1883,7 +1949,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 160));
 
         expect(find.text('কেন সন্তুষ্ট হন নি?'), findsNothing);
-        expect(find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'), findsNothing);
+        expect(
+          find.descendant(of: dialog, matching: find.text('খুব খারাপ')),
+          findsNothing,
+        );
         // The notice strip is unaffected — only the head collapses.
         expect(
           find.text('আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।'),
@@ -1895,6 +1964,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 160));
 
         expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
+        expect(
+          find.descendant(of: dialog, matching: find.text('খুব খারাপ')),
+          findsOneWidget,
+        );
       },
     );
   });

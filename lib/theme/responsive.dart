@@ -202,9 +202,15 @@ class Responsive {
   // ── Negative dialog head (FIX-04 §1) — mirrors the tapped rating ─────
   double get negativeHeadEmojiSize =>
       isExpanded ? 56.0 : (isMedium ? 46.0 : 38.0);
-  double get negativeHeadTitleSize =>
+
+  /// FIX-05 §1: the rating's own Bengali name (`খারাপ`/`খুব খারাপ`), now the
+  /// header's primary line — same sizes the old title used.
+  double get negativeHeadRatingNameSize =>
       isExpanded ? 30.0 : (isMedium ? 26.0 : 24.0);
-  double get negativeHeadSubtitleSize =>
+
+  /// FIX-05 §1: `কেন সন্তুষ্ট হন নি?`, demoted to a secondary line under the
+  /// rating name — same sizes the old subtitle used.
+  double get negativeHeadQuestionSize =>
       isExpanded ? 15.0 : (isMedium ? 14.0 : 13.0);
 
   // ── Comment label (FIX-04 §2) — a prompt now, not a caption ──────────

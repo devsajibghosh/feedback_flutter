@@ -201,13 +201,15 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
   }
 }
 
-/// The negative dialog's head (FIX-04 §1): leads with the same emoji the
-/// visitor just tapped — 🙁 for `poor`, 😞 for `very_poor` — so the dialog
-/// reads as a continuation of that tap instead of a new screen. Collapses
-/// on *any* screen size whenever the keyboard opens (not just short-height,
-/// unlike the shared [DialogHead] used by the positive dialog), since this
-/// head is now tall enough to matter everywhere, and animates over 160ms
-/// so it doesn't jump.
+/// The negative dialog's head (FIX-04 §1, rating name added FIX-05 §1):
+/// leads with the same emoji the visitor just tapped — 🙁 for `poor`, 😞 for
+/// `very_poor` — then the rating's own Bengali name spelled out as the
+/// primary line, with `কেন সন্তুষ্ট হন নি?` demoted to a secondary line below
+/// it. The old subtitle here moved out to the notice strip (FIX-05 §2).
+/// Collapses on *any* screen size whenever the keyboard opens (not just
+/// short-height, unlike the shared [DialogHead] used by the positive
+/// dialog), since this head is now tall enough to matter everywhere, and
+/// animates over 160ms so it doesn't jump.
 class _NegativeDialogHead extends StatelessWidget {
   const _NegativeDialogHead({required this.rating});
 
@@ -226,6 +228,7 @@ class _NegativeDialogHead extends StatelessWidget {
       );
     }
     final emoji = rating == 'very_poor' ? '😞' : '🙁';
+    final ratingName = rating == 'very_poor' ? 'খুব খারাপ' : 'খারাপ';
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 160),
@@ -247,28 +250,28 @@ class _NegativeDialogHead extends StatelessWidget {
                       height: 1,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Text(
-                    'কেন সন্তুষ্ট হন নি?',
+                    ratingName,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: AppTheme.headingFontFamily,
                       fontFamilyFallback: AppTheme.bengaliFallback,
                       fontWeight: FontWeight.w700,
-                      fontSize: responsive.negativeHeadTitleSize,
+                      fontSize: responsive.negativeHeadRatingNameSize,
                       color: AppTokens.ink,
                       height: 1.2,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'এক বা একাধিক কারণ বেছে নিতে পারেন',
+                    'কেন সন্তুষ্ট হন নি?',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: AppTheme.bodyFontFamily,
                       fontFamilyFallback: AppTheme.bengaliFallback,
                       fontWeight: FontWeight.w400,
-                      fontSize: responsive.negativeHeadSubtitleSize,
+                      fontSize: responsive.negativeHeadQuestionSize,
                       color: AppTokens.inkMuted,
                     ),
                   ),
