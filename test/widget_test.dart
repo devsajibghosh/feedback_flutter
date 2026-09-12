@@ -516,8 +516,8 @@ void main() {
     );
 
     test(
-      'drainForTest() marks a success synced, a 422 rejected, stops the '
-      'batch on any other error, and backs off',
+      'FIX-03 §1: drainForTest() uploads only the single oldest pending row, '
+      'even with several queued',
       () async {
         final db = _FakeDbService()
           ..rows.addAll([
@@ -549,39 +549,127 @@ void main() {
               synced: 0,
             ),
           ]);
-
-        var call = 0;
+        var calls = 0;
         final api = _ScriptedApiService()
           ..onSubmit = () async {
-            call++;
-            if (call == 1) return const SubmitSuccess('ok');
-            if (call == 2) {
-              throw DioException(
+            calls++;
+            return const SubmitSuccess('ok');
+          };
+        final sync = SyncService(api: api, db: db);
+
+        await sync.drainForTest();
+
+        expect(calls, 1);
+        expect(db.rows.firstWhere((r) => r.id == 1).synced, 1);
+        expect(db.rows.firstWhere((r) => r.id == 2).synced, 0);
+        expect(db.rows.firstWhere((r) => r.id == 3).synced, 0);
+      },
+    );
+
+    test(
+      'FIX-03 §1: the 30s upload throttle blocks a second drain immediately '
+      'after the first, even with a row still pending',
+      () async {
+        final db = _FakeDbService()
+          ..rows.addAll([
+            FeedbackEntry(
+              id: 1,
+              orgId: 7,
+              rating: 'poor',
+              comment: 'first',
+              categoryIds: const [],
+              createdAt: DateTime(2024, 1, 1),
+              synced: 0,
+            ),
+            FeedbackEntry(
+              id: 2,
+              orgId: 7,
+              rating: 'poor',
+              comment: 'second',
+              categoryIds: const [],
+              createdAt: DateTime(2024, 1, 2),
+              synced: 0,
+            ),
+          ]);
+        var calls = 0;
+        final api = _ScriptedApiService()
+          ..onSubmit = () async {
+            calls++;
+            return const SubmitSuccess('ok');
+          };
+        final sync = SyncService(api: api, db: db);
+
+        await sync.drainForTest();
+        expect(calls, 1);
+
+        // Immediately again — well within the 30s throttle window. This is
+        // the "5s first-attempt timer and the 30s throttle disagree" case;
+        // the throttle must win.
+        await sync.drainForTest();
+        expect(calls, 1);
+        expect(db.rows.firstWhere((r) => r.id == 2).synced, 0);
+      },
+    );
+
+    test(
+      'a 422 marks the row rejected without counting as a hard failure',
+      () async {
+        final db = _FakeDbService()
+          ..rows.add(
+            FeedbackEntry(
+              id: 1,
+              orgId: 7,
+              rating: 'poor',
+              comment: '',
+              categoryIds: const [],
+              createdAt: DateTime(2024, 1, 1),
+              synced: 0,
+            ),
+          );
+        final api = _ScriptedApiService()
+          ..onSubmit = () async => throw DioException(
                 requestOptions: RequestOptions(path: '/feedback/store'),
                 response: Response(
                   requestOptions: RequestOptions(path: '/feedback/store'),
                   statusCode: 422,
                 ),
               );
-            }
-            // Third row: network failure — must stop the batch, not mark
-            // anything, and never reach a fourth call.
-            throw DioException(
-              requestOptions: RequestOptions(path: '/feedback/store'),
-            );
-          };
         final sync = SyncService(api: api, db: db);
 
         await sync.drainForTest();
 
-        expect(db.rows.firstWhere((r) => r.id == 1).synced, 1);
-        expect(db.rows.firstWhere((r) => r.id == 2).synced, -1);
-        expect(db.rows.firstWhere((r) => r.id == 3).synced, 0);
-        expect(call, 3);
+        expect(db.rows.single.synced, -1);
+        final summary = await sync.debugSummary();
+        expect(summary.consecutiveFailures, 0);
+        expect(summary.currentBackoff, const Duration(seconds: 45));
+      },
+    );
 
-        // The batch stopped on a hard failure (the third row) — the next
-        // attempt backs off from the regular 45s interval instead of
-        // retrying immediately.
+    test(
+      'a hard failure (non-422 network/HTTP error) leaves the row pending '
+      'and backs off',
+      () async {
+        final db = _FakeDbService()
+          ..rows.add(
+            FeedbackEntry(
+              id: 1,
+              orgId: 7,
+              rating: 'poor',
+              comment: '',
+              categoryIds: const [],
+              createdAt: DateTime(2024, 1, 1),
+              synced: 0,
+            ),
+          );
+        final api = _ScriptedApiService()
+          ..onSubmit = () async => throw DioException(
+                requestOptions: RequestOptions(path: '/feedback/store'),
+              );
+        final sync = SyncService(api: api, db: db);
+
+        await sync.drainForTest();
+
+        expect(db.rows.single.synced, 0);
         final summary = await sync.debugSummary();
         expect(summary.consecutiveFailures, 1);
         expect(summary.currentBackoff, const Duration(seconds: 90));

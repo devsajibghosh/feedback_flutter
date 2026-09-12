@@ -28,9 +28,15 @@ class SyncService {
   static const _firstAttemptDelay = Duration(seconds: 5);
   static const _regularInterval = Duration(seconds: 45);
   static const _maxBackoff = Duration(minutes: 15);
-  static const _batchSize = 3;
-  static const _rowGap = Duration(milliseconds: 500);
   static const _retention = Duration(days: 7);
+
+  /// FIX-03 §1: at most one row uploaded every 30 seconds, regardless of
+  /// how many are pending or how many triggers fire in that window — 50
+  /// queued rows drain over roughly 25 minutes, which is intentional. This
+  /// is invisible to the user by construction: submit was already a local
+  /// write with no network in its path (FIX-02 §1), so nothing about how
+  /// fast the queue drains is ever something a person waits on or sees.
+  static const _uploadThrottle = Duration(seconds: 30);
 
   final ApiService _api;
   final DbService _db;
@@ -43,6 +49,11 @@ class SyncService {
   Duration _backoff = _regularInterval;
   int _consecutiveFailures = 0;
   DateTime? _lastSuccessfulSync;
+
+  /// When the most recent upload *attempt* (success, rejection, or
+  /// failure) finished — measured from completion, not from when the tick
+  /// that triggered it fired, so a slow upload can't cause two to overlap.
+  DateTime? _lastUploadCompletion;
 
   /// Writes the row and returns immediately — no `await` on anything
   /// network. If even the local write fails, the exception propagates so
@@ -67,9 +78,11 @@ class SyncService {
 
     // First attempt for this row: 5s from now, independent of the regular
     // tick schedule. If several rows land within the same 5s window (a
-    // visitor tapping more than once), the batching in _drain picks all of
-    // them up together the first time any of these timers fires — the rest
-    // just find nothing left to do.
+    // visitor tapping more than once), each schedules its own timer, but
+    // _drain only ever sends the single oldest pending row and is subject
+    // to the 30s upload throttle (FIX-03 §1) — the rest just find either
+    // nothing left to do, or the throttle still active, and the regular
+    // tick or a later row's own timer picks them up in turn.
     Timer(_firstAttemptDelay, _drain);
 
     return const SubmitSuccess('আপনার মূল্যবান মতামতের জন্য ধন্যবাদ! 👏');
@@ -114,56 +127,62 @@ class SyncService {
     });
   }
 
-  /// Drains up to [_batchSize] oldest pending rows, oldest first, with a
-  /// [_rowGap] pause between them. Never throws — every path here is
-  /// diagnostic-only. Skips entirely if a drain is already running, so the
-  /// 5s-after-insert timer, the connectivity trigger, and the regular tick
-  /// never race each other.
+  /// Uploads at most the single oldest pending row, then stops — FIX-03 §1
+  /// replaces the old "3 rows per tick" batching with a hard one-row-per-30s
+  /// throttle, measured from this method's own last completion so a slow
+  /// upload can't let two overlap. Where the 5s first-attempt timer and the
+  /// 30s throttle disagree, the throttle wins: this simply does nothing and
+  /// waits for whichever trigger (the regular tick, a new row's own 5s
+  /// timer, or connectivity coming back) fires next.
+  ///
+  /// Never throws — every path here is diagnostic-only. Skips entirely if a
+  /// drain is already running, so the 5s-after-insert timer, the
+  /// connectivity trigger, and the regular tick never race each other.
   Future<void> _drain() async {
     if (_draining) return;
     _draining = true;
     try {
-      final rows = await _db.getUnsyncedBatch(limit: _batchSize);
+      final lastCompletion = _lastUploadCompletion;
+      if (lastCompletion != null &&
+          DateTime.now().difference(lastCompletion) < _uploadThrottle) {
+        return;
+      }
+
+      final rows = await _db.getUnsyncedBatch(limit: 1);
+      if (rows.isEmpty) return;
+      final id = rows.single.id;
+      if (id == null) return;
+      final row = rows.single;
+
       var hardFailure = false;
-      var anySucceeded = false;
-
-      for (var i = 0; i < rows.length; i++) {
-        final row = rows[i];
-        final id = row.id;
-        if (id == null) continue;
-
-        try {
-          final result = await _api.submitFeedback(
-            orgId: row.orgId,
-            rating: row.rating,
-            comment: row.comment,
-            categoryIds: row.categoryIds,
-          );
-          if (result is SubmitSuccess) {
-            await _db.markSynced(id);
-            anySucceeded = true;
-          } else {
-            // A 2xx whose body doesn't actually claim success. Not a 422,
-            // so it isn't a permanent rejection, but it also isn't a
-            // network/HTTP error — treat it the same as "any other
-            // outcome": stop the batch and back off rather than guessing.
-            hardFailure = true;
-            break;
-          }
-        } on DioException catch (e) {
-          if (e.response?.statusCode == 422) {
-            await _db.markRejected(id);
-            continue;
-          }
+      var succeeded = false;
+      try {
+        final result = await _api.submitFeedback(
+          orgId: row.orgId,
+          rating: row.rating,
+          comment: row.comment,
+          categoryIds: row.categoryIds,
+        );
+        if (result is SubmitSuccess) {
+          await _db.markSynced(id);
+          succeeded = true;
+        } else {
+          // A 2xx whose body doesn't actually claim success. Not a 422,
+          // so it isn't a permanent rejection, but it also isn't a
+          // network/HTTP error — treat it the same as "any other
+          // outcome": back off rather than guessing.
+          hardFailure = true;
+        }
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 422) {
+          await _db.markRejected(id);
+        } else {
           DebugLog.record('sync row $id', e);
           hardFailure = true;
-          break;
-        }
-
-        if (i < rows.length - 1) {
-          await Future.delayed(_rowGap);
         }
       }
+
+      _lastUploadCompletion = DateTime.now();
 
       if (hardFailure) {
         _consecutiveFailures++;
@@ -175,7 +194,7 @@ class SyncService {
       } else {
         _consecutiveFailures = 0;
         _backoff = _regularInterval;
-        if (anySucceeded) {
+        if (succeeded) {
           _lastSuccessfulSync = DateTime.now();
         }
       }
