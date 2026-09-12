@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,37 +7,58 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'screens/feedback_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/api_service.dart';
+import 'services/crash_log.dart';
 import 'services/kiosk_service.dart';
 import 'services/storage_service.dart';
 import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/tokens.dart';
 import 'widgets/blurred_background.dart';
+import 'widgets/feedback_dialog.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  // FIX-03 §7/§8: a stuck dialog is unacceptable — nobody is around to
+  // restart this kiosk. Every uncaught error, sync or async, is logged to
+  // the internal rolling file (never surfaced) and, if a feedback dialog
+  // happens to be open, force-closes it back to the rating screen instead
+  // of leaving it sitting there unresponsive.
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-  // The real `sqflite` plugin only has an Android/iOS implementation. On
-  // every other platform, swap in the FFI-backed desktop implementation so
-  // the database (and therefore the app) can open at all — this branch
-  // never runs on Android/iOS, so production behaviour there is unchanged.
-  if (!Platform.isAndroid && !Platform.isIOS) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+      FlutterError.onError = (details) {
+        unawaited(CrashLog.record('FlutterError', details.exception, details.stack));
+        FeedbackDialogGuard.closeActiveDialog();
+      };
 
-  await KioskService.enable();
+      // The real `sqflite` plugin only has an Android/iOS implementation. On
+      // every other platform, swap in the FFI-backed desktop implementation
+      // so the database (and therefore the app) can open at all — this
+      // branch never runs on Android/iOS, so production behaviour there is
+      // unchanged.
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+      }
 
-  // A single long-lived queue worker for the life of the app (FIX-02 §1) —
-  // created and started here, never owned by a widget, so it keeps draining
-  // the local queue regardless of which screen is on top or how many times
-  // the feedback screen itself is rebuilt.
-  final api = ApiService();
-  final storage = StorageService();
-  final sync = SyncService(api: api);
-  sync.start();
+      await KioskService.enable();
 
-  runApp(FeedbackApp(api: api, storage: storage, sync: sync));
+      // A single long-lived queue worker for the life of the app (FIX-02
+      // §1) — created and started here, never owned by a widget, so it
+      // keeps draining the local queue regardless of which screen is on top
+      // or how many times the feedback screen itself is rebuilt.
+      final api = ApiService();
+      final storage = StorageService();
+      final sync = SyncService(api: api);
+      sync.start();
+
+      runApp(FeedbackApp(api: api, storage: storage, sync: sync));
+    },
+    (error, stackTrace) {
+      unawaited(CrashLog.record('zoned', error, stackTrace));
+      FeedbackDialogGuard.closeActiveDialog();
+    },
+  );
 }
 
 class FeedbackApp extends StatelessWidget {

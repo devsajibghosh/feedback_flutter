@@ -51,6 +51,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   String _marqueeText = 'লোড হচ্ছে...';
   String _heading = _defaultHeading;
 
+  // FIX-03 §8: an unattended kiosk gets double-taps and rapid taps across
+  // different ratings that a phone app never has to worry about. Gating on
+  // "is a dialog already open" (rather than a fixed-duration debounce)
+  // handles both at once, and for exactly as long as it needs to — no
+  // dialog can be opened while one is already showing, whether that's the
+  // same rating tapped twice or five different ones tapped in a burst.
+  bool _dialogOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -100,16 +108,31 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     });
   }
 
-  void _handleRatingTap(String rating) {
-    if (_positiveRatings.contains(rating)) {
-      _openPositiveDialog(rating);
-    } else {
-      _openNegativeDialog(rating);
+  // FIX-03 §8: `_dialogOpen` is released the moment the feedback dialog
+  // route itself closes, not after the success message that may follow —
+  // gating only the dialog means a rating tap that arrives while the
+  // (non-blocking, FIX-03 §2) success message is still showing can open a
+  // new dialog right away, exactly as §2 requires, while a second tap that
+  // arrives *while a dialog is open* is dropped.
+  Future<void> _handleRatingTap(String rating) async {
+    if (_dialogOpen) return;
+    _dialogOpen = true;
+    SubmitResult? result;
+    try {
+      result = _positiveRatings.contains(rating)
+          ? await _showPositiveDialog(rating)
+          : await _showNegativeDialog(rating);
+    } finally {
+      _dialogOpen = false;
+    }
+    if (result is SubmitSuccess && mounted) {
+      await showSuccessAlert(context,
+          title: 'ধন্যবাদ!', message: result.message);
     }
   }
 
-  Future<void> _openPositiveDialog(String rating) async {
-    final result = await showFeedbackDialog<SubmitResult>(
+  Future<SubmitResult?> _showPositiveDialog(String rating) {
+    return showFeedbackDialog<SubmitResult>(
       context,
       isPositive: true,
       builder: (context, close) => PositiveDialogContent(
@@ -119,11 +142,6 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         sync: _sync,
       ),
     );
-
-    if (result is SubmitSuccess && mounted) {
-      await showSuccessAlert(context,
-          title: 'ধন্যবাদ!', message: result.message);
-    }
   }
 
   /// Long-press the marquee bar to see local DB and queue-worker state
@@ -161,8 +179,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     );
   }
 
-  Future<void> _openNegativeDialog(String rating) async {
-    final result = await showFeedbackDialog<SubmitResult>(
+  Future<SubmitResult?> _showNegativeDialog(String rating) {
+    return showFeedbackDialog<SubmitResult>(
       context,
       isPositive: false,
       builder: (context, close) => NegativeDialogContent(
@@ -174,11 +192,6 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         sync: _sync,
       ),
     );
-
-    if (result is SubmitSuccess && mounted) {
-      await showSuccessAlert(context,
-          title: 'ধন্যবাদ!', message: result.message);
-    }
   }
 
   @override

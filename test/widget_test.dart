@@ -1068,6 +1068,244 @@ void main() {
       },
     );
   });
+
+  group('FIX-03 §8: interaction hardening', () {
+    testWidgets('double-tapping a rating opens only one dialog',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Back-to-back, before the first tap's async dialog-open work has a
+      // chance to complete.
+      await tester.tap(find.byType(RatingButton).first);
+      await tester.tap(find.byType(RatingButton).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
+    });
+
+    testWidgets('rapid taps across different ratings do not queue up dialogs',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).at(0));
+      await tester.tap(find.byType(RatingButton).at(1));
+      await tester.tap(find.byType(RatingButton).at(4));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Only the very first tap's dialog exists — cancelling it must reveal
+      // a plain rating screen, not a second dialog waiting behind it.
+      await tester.tap(find.text('বাতিল'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsNothing);
+      expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsNothing);
+    });
+
+    testWidgets('tapping the barrier does nothing', (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
+
+      // Far corner, outside the centred dialog card.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
+    });
+
+    testWidgets('the back button does nothing at the root',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(FeedbackScreen), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+
+      expect(find.byType(FeedbackScreen), findsOneWidget);
+    });
+
+    testWidgets('the back button inside an open dialog closes it and nothing more',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsNothing);
+      expect(find.byType(FeedbackScreen), findsOneWidget);
+    });
+
+    testWidgets(
+      'FeedbackDialogGuard can force-close whatever dialog is open — the '
+      'mechanism main.dart\'s global error handlers use so a stuck dialog '
+      'is never unrecoverable',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsOneWidget);
+
+        FeedbackDialogGuard.closeActiveDialog();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsNothing);
+        expect(find.byType(FeedbackScreen), findsOneWidget);
+      },
+    );
+
+    test('FeedbackDialogGuard.closeActiveDialog() is a no-op with no dialog open',
+        () {
+      expect(FeedbackDialogGuard.closeActiveDialog, returnsNormally);
+    });
+
+    testWidgets('system text scale is clamped to 1.3x max at the root',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      tester.platformDispatcher.textScaleFactorTestValue = 3.0;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(const FeedbackApp());
+      await tester.pump();
+      await tester.pump();
+
+      final context = tester.element(find.byType(LoginScreen));
+      expect(MediaQuery.textScalerOf(context).scale(100.0), 130.0);
+    });
+
+    testWidgets('system text scale is clamped to 0.85x min at the root',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      tester.platformDispatcher.textScaleFactorTestValue = 0.3;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(const FeedbackApp());
+      await tester.pump();
+      await tester.pump();
+
+      final context = tester.element(find.byType(LoginScreen));
+      expect(MediaQuery.textScalerOf(context).scale(100.0), 85.0);
+    });
+
+    testWidgets('a 40-character category name wraps instead of clipping',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      const longName =
+          'এটি একটি অত্যন্ত দীর্ঘ ক্যাটেগরির নাম যা চল্লিশটি অক্ষরের বেশি দীর্ঘ';
+      final api = _FakeApiService()
+        ..categories = const [Category(id: 1, name: longName)];
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final label = tester.widget<Text>(find.text(longName));
+      expect(label.overflow, isNot(TextOverflow.ellipsis));
+      expect(label.maxLines, isNull);
+    });
+
+    testWidgets('10+ categories scroll within the dialog instead of overflowing',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService()
+        ..categories = [
+          for (var i = 1; i <= 14; i++) Category(id: i, name: 'কারণ নম্বর $i'),
+        ];
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(CategoryPill), findsNWidgets(14));
+
+      await tester.ensureVisible(find.text('কারণ নম্বর 14'));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
 
 /// Simulates the db layer itself failing (e.g. disk error) to prove a sync

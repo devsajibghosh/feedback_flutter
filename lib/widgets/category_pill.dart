@@ -85,11 +85,13 @@ class CategoryPill extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 14),
+            // Wraps instead of clipping (FIX-03 §8): a hospital-corridor
+            // complaint category can run long, and truncating it with "..."
+            // would hide exactly the word that mattered.
             Flexible(
               child: Text(
                 category.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                softWrap: true,
                 style: TextStyle(
                   fontFamily: AppTheme.bodyFontFamily,
                   fontFamilyFallback: AppTheme.bengaliFallback,
