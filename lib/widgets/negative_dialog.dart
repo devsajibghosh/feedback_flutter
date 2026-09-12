@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/category.dart';
 import '../services/api_service.dart';
+import '../services/crash_log.dart';
 import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
@@ -138,12 +141,8 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
 
     if (error != null) {
       setState(() => _isSubmitting = false);
-      await showUnexpectedErrorAlert(
-        context,
-        error: error,
-        stackTrace: stackTrace,
-        source: 'NegativeDialog._submit',
-      );
+      unawaited(CrashLog.record('NegativeDialog._submit', error, stackTrace));
+      await showGenericErrorAlert(context);
       return;
     }
 

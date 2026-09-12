@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/crash_log.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/responsive.dart';
@@ -57,12 +60,8 @@ class _PositiveDialogContentState extends State<PositiveDialogContent> {
 
     if (error != null) {
       setState(() => _isSubmitting = false);
-      await showUnexpectedErrorAlert(
-        context,
-        error: error,
-        stackTrace: stackTrace,
-        source: 'PositiveDialog._submit',
-      );
+      unawaited(CrashLog.record('PositiveDialog._submit', error, stackTrace));
+      await showGenericErrorAlert(context);
       return;
     }
 

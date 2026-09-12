@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -18,6 +19,16 @@ class CrashLog {
   static const _capBytes = 2 * 1024 * 1024; // 2MB
   static File? _file;
   static bool _initFailed = false;
+
+  /// Tests only — the resolved file handle is cached for the life of the
+  /// process (there's exactly one real log file for the app's whole
+  /// lifetime), which a test suite that swaps `PathProviderPlatform`
+  /// between cases needs to be able to clear.
+  @visibleForTesting
+  static void resetForTest() {
+    _file = null;
+    _initFailed = false;
+  }
 
   static Future<void> record(
     String context,

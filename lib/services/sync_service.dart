@@ -7,8 +7,8 @@ import 'package:meta/meta.dart';
 
 import '../models/feedback_entry.dart';
 import 'api_service.dart';
+import 'crash_log.dart';
 import 'db_service.dart';
-import 'debug_log.dart';
 
 /// Local-first submit plus a background queue worker (FIX-02 §1 — this
 /// supersedes SPEC.md §4.7 and §4.8 entirely).
@@ -49,6 +49,11 @@ class SyncService {
   Duration _backoff = _regularInterval;
   int _consecutiveFailures = 0;
   DateTime? _lastSuccessfulSync;
+
+  /// In-memory only, for [debugSummary]'s internal-diagnostic consumers
+  /// (the dev verification harness under `tool/`) — the persistent record
+  /// of failures now lives in [CrashLog]'s rolling file (FIX-03 §6/§7).
+  String? _lastError;
 
   /// When the most recent upload *attempt* (success, rejection, or
   /// failure) finished — measured from completion, not from when the tick
@@ -100,7 +105,7 @@ class SyncService {
       Object error,
       StackTrace stackTrace,
     ) {
-      DebugLog.record('retention cleanup', error, stackTrace);
+      _recordError('retention cleanup', error, stackTrace);
     });
 
     _scheduleNext(_regularInterval);
@@ -177,7 +182,7 @@ class SyncService {
         if (e.response?.statusCode == 422) {
           await _db.markRejected(id);
         } else {
-          DebugLog.record('sync row $id', e);
+          _recordError('sync row $id', e);
           hardFailure = true;
         }
       }
@@ -200,11 +205,20 @@ class SyncService {
       }
     } catch (error, stackTrace) {
       // A sync tick must never crash the app or surface anything to the
-      // user — just log it for the debug dump and wait for the next one.
-      DebugLog.record('drain', error, stackTrace);
+      // user — just log it internally and wait for the next one.
+      _recordError('drain', error, stackTrace);
     } finally {
       _draining = false;
     }
+  }
+
+  /// Records both the in-memory summary (for [debugSummary]'s internal
+  /// consumers) and the persistent rolling log (FIX-03 §6/§7's "keep
+  /// internal capture") — never surfaced to the user either way.
+  void _recordError(String context, Object error, [StackTrace? stackTrace]) {
+    _lastError = '${DateTime.now().toIso8601String()} [$context] '
+        '${error.runtimeType}: $error';
+    unawaited(CrashLog.record(context, error, stackTrace));
   }
 
   /// Runs one drain cycle immediately, without waiting for a timer. Tests
@@ -223,7 +237,7 @@ class SyncService {
       dbPath: db.dbPath,
       currentBackoff: _backoff,
       consecutiveFailures: _consecutiveFailures,
-      lastError: DebugLog.lastError,
+      lastError: _lastError,
       lastSuccessfulSync: _lastSuccessfulSync,
     );
   }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../services/debug_log.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 
@@ -74,25 +73,18 @@ Future<void> showErrorAlert(
   );
 }
 
-/// TEMP (FIX-01 §3): the submit path used to let anything that wasn't a
-/// `DioException` escape uncaught — no alert, no reset, the button just
-/// died. This is the fallback for that: whatever it actually is, show its
-/// real type and message instead of a generic string, and log it to
-/// [DebugLog] so it also shows up in the long-press debug dump without
-/// needing a cable. Ugly on purpose — this is a diagnostic tool, not the
-/// final copy.
-Future<void> showUnexpectedErrorAlert(
-  BuildContext context, {
-  required Object error,
-  StackTrace? stackTrace,
-  String source = 'submit',
-}) {
-  DebugLog.record(source, error, stackTrace);
+/// The fallback for anything `_submit()` catches that isn't a handled
+/// [SubmitFailure] (FIX-03 §6): no raw exception text or "(ডিবাগ)" label
+/// shown to the user any more — the real error still goes to the internal
+/// rolling log (`CrashLog`, called by the caller before this), but what a
+/// visitor on the kiosk actually sees is the same plain, calm copy every
+/// other alert uses.
+Future<void> showGenericErrorAlert(BuildContext context) {
   return showErrorAlert(
     context,
-    title: 'অপ্রত্যাশিত ত্রুটি (ডিবাগ)',
-    message: '${error.runtimeType}: $error',
-    confirmLabel: 'OK',
+    title: 'দুঃখিত',
+    message: 'দুঃখিত, একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।',
+    confirmLabel: 'ঠিক আছে',
   );
 }
 

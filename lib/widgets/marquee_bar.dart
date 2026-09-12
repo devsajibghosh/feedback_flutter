@@ -11,14 +11,9 @@ import '../theme/tokens.dart';
 /// anything below it changed — bought nothing but cost: a plain semi-opaque
 /// fill looks near-identical here and is far cheaper.
 class MarqueeBar extends StatelessWidget {
-  const MarqueeBar({super.key, required this.text, this.onDebugLongPress});
+  const MarqueeBar({super.key, required this.text});
 
   final String text;
-
-  /// TEMP (FIX-01 §5, brought forward): opens the on-device debug dump.
-  /// Null in tests/anywhere that doesn't wire it up — the long press then
-  /// simply does nothing.
-  final VoidCallback? onDebugLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -28,34 +23,31 @@ class MarqueeBar extends StatelessWidget {
       top: 0,
       left: 0,
       right: 0,
-      child: GestureDetector(
-        onLongPress: onDebugLongPress,
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            vertical: 9,
-            horizontal: responsive.marqueeHorizontalPadding,
-          ),
-          decoration: BoxDecoration(
-            color: const Color.fromRGBO(10, 28, 20, 0.84),
-            border: Border(
-              bottom: BorderSide(
-                color: AppTokens.white.withOpacity(0.07),
-              ),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          vertical: 9,
+          horizontal: responsive.marqueeHorizontalPadding,
+        ),
+        decoration: BoxDecoration(
+          color: const Color.fromRGBO(10, 28, 20, 0.84),
+          border: Border(
+            bottom: BorderSide(
+              color: AppTokens.white.withOpacity(0.07),
             ),
           ),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: AppTheme.bodyFontFamily,
-              fontFamilyFallback: AppTheme.bengaliFallback,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFFC2E0D0).withOpacity(0.88),
-              letterSpacing: fontSize * 0.05,
-            ),
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: AppTheme.bodyFontFamily,
+            fontFamilyFallback: AppTheme.bengaliFallback,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFFC2E0D0).withOpacity(0.88),
+            letterSpacing: fontSize * 0.05,
           ),
         ),
       ),

@@ -198,41 +198,6 @@ class _FeedbackScreenState extends State<FeedbackScreen>
     );
   }
 
-  /// Long-press the marquee bar to see local DB and queue-worker state
-  /// without a cable (FIX-01 §5, extended by FIX-02 §1). Keep this until
-  /// told to remove it.
-  Future<void> _showDebugDump() async {
-    final summary = await _sync.debugSummary();
-    if (!mounted) return;
-
-    final bySynced = summary.bySynced;
-    final dump = 'Total rows: ${summary.total}\n'
-        'Pending (synced=0): ${bySynced[0] ?? 0}\n'
-        'Sent (synced=1): ${bySynced[1] ?? 0}\n'
-        'Rejected (synced=-1): ${bySynced[-1] ?? 0}\n'
-        'Oldest pending: ${summary.oldestPending?.toIso8601String() ?? '—'}\n'
-        'Current backoff interval: ${summary.currentBackoff.inSeconds}s\n'
-        'Consecutive failures: ${summary.consecutiveFailures}\n'
-        'Last error: ${summary.lastError ?? 'none'}\n'
-        'Last successful sync: '
-        '${summary.lastSuccessfulSync?.toIso8601String() ?? 'never'}\n'
-        'DB path: ${summary.dbPath}';
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Debug dump (FIX-01 §5 — temporary)'),
-        content: SingleChildScrollView(child: Text(dump)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<SubmitResult?> _showNegativeDialog(String rating) {
     return showFeedbackDialog<SubmitResult>(
       context,
@@ -305,7 +270,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
             ),
           ),
         ),
-        MarqueeBar(text: _marqueeText, onDebugLongPress: _showDebugDump),
+        MarqueeBar(text: _marqueeText),
       ],
     );
   }

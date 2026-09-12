@@ -16,6 +16,7 @@ import 'package:feedback/services/sync_service.dart';
 import 'package:feedback/widgets/blurred_background.dart';
 import 'package:feedback/widgets/category_pill.dart';
 import 'package:feedback/widgets/feedback_dialog.dart';
+import 'package:feedback/widgets/marquee_bar.dart';
 import 'package:feedback/widgets/positive_dialog.dart';
 import 'package:feedback/widgets/rating_button.dart';
 
@@ -764,7 +765,8 @@ void main() {
 
   testWidgets(
     'a non-DioException from sync.submit() resets isSubmitting and shows '
-    'the real error instead of leaving the button stuck (FIX-01 §2/§3)',
+    'a plain generic message instead of leaving the button stuck '
+    '(FIX-01 §2/§3, message genericised by FIX-03 §6)',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -800,13 +802,19 @@ void main() {
       // broad catch handled it.
       expect(tester.takeException(), isNull);
 
-      // The real exception is shown, not a generic string.
-      expect(find.textContaining('StateError'), findsOneWidget);
-      expect(find.textContaining('boom'), findsOneWidget);
+      // FIX-03 §6: no raw exception text or "(ডিবাগ)" label any more —
+      // the real error goes to the internal log only, and the user sees
+      // the same plain, calm copy every other alert uses.
+      expect(find.textContaining('StateError'), findsNothing);
+      expect(find.textContaining('boom'), findsNothing);
+      expect(
+        find.text('দুঃখিত, একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।'),
+        findsOneWidget,
+      );
 
       // Dismiss the error alert — the button must be usable again, not
       // stuck showing the spinner forever.
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('ঠিক আছে'));
       await tester.pump();
 
       expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -1153,6 +1161,63 @@ void main() {
         await tester.pump();
 
         expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsOneWidget);
+      },
+    );
+  });
+
+  group('FIX-03 §6: debug surfaces removed', () {
+    testWidgets('long-pressing the marquee bar does nothing any more',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.longPress(find.byType(MarqueeBar));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.textContaining('Debug dump'), findsNothing);
+    });
+
+    testWidgets(
+      'a local-write failure shows the plain generic message, not the old '
+      '"অপ্রত্যাশিত ত্রুটি (ডিবাগ)" debug label',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AppRoot(
+              api: api,
+              sync: _ThrowingSyncService(),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(find.text('জমা দিন'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.textContaining('ডিবাগ'), findsNothing);
+        expect(
+          find.text('দুঃখিত, একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।'),
+          findsOneWidget,
+        );
       },
     );
   });

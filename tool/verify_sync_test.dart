@@ -28,11 +28,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:feedback/services/api_service.dart';
+import 'package:feedback/services/crash_log.dart';
 import 'package:feedback/services/db_service.dart';
 import 'package:feedback/services/sync_service.dart';
 
@@ -132,6 +134,38 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );
+
+  test(
+    'FIX-03 §6/§7: CrashLog writes to a real rolling file and trims when '
+    'it gets too big',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp('feedback_verify_crashlog_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      addTearDown(CrashLog.resetForTest);
+      CrashLog.resetForTest();
+      PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+
+      await CrashLog.record('test-context', StateError('boom'), StackTrace.current);
+      final logFile = File(p.join(tempDir.path, 'FeedbackSystem', 'app.log'));
+      expect(logFile.existsSync(), isTrue);
+      final firstContent = await logFile.readAsString();
+      _log('CrashLog wrote:\n$firstContent');
+      expect(firstContent, contains('test-context'));
+      expect(firstContent, contains('StateError'));
+      expect(firstContent, contains('boom'));
+
+      // Force it well past the 2MB cap and confirm it actually trims
+      // instead of growing without bound (FIX-03 §7: "nothing grows
+      // without bound: log file...").
+      final bigError = 'x' * 500000; // ~500KB of padding per call
+      for (var i = 0; i < 10; i++) {
+        await CrashLog.record('pad-$i', StateError(bigError));
+      }
+      final finalLength = await logFile.length();
+      _log('log length after padding: $finalLength bytes (cap is 2MB)');
+      expect(finalLength, lessThanOrEqualTo(2 * 1024 * 1024));
+    },
+  );
 }
 
 Future<void> _runVerification() async {
@@ -194,6 +228,15 @@ Future<void> _runVerification() async {
   expect(mock.requestCount, greaterThanOrEqualTo(1),
       reason: 'the 5s tick must have posted to the server by now');
   expect(summary.bySynced[1], 1, reason: 'the row must now be synced=1');
+
+  // FIX-03 §1: at most one upload every 30s, measured from the previous
+  // upload's completion. Row 1 just completed a few seconds ago — without
+  // waiting out that window first, row 2's own 5s-later attempt below would
+  // be silently throttled (no request, no failure recorded), which is
+  // exactly what happened the first time this harness ran after §1 landed.
+  _log(
+      '\nwaiting out the 30s upload throttle before testing the offline row...');
+  await Future<void>.delayed(const Duration(seconds: 31));
 
   _log(
       '\n=== STEP 7: airplane-mode equivalent — stop the mock server, submit again ===');
