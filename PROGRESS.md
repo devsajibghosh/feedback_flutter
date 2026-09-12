@@ -1,5 +1,24 @@
 # Progress Log
 
+DONE (FIX-04 §3 — full tool-harness rerun, all 6 real tests): ran
+`flutter test tool/verify_sync_test.dart` fresh this session, not
+trusted from the log. **All 6 pass:** the 8-step local-first
+submit+sync pipeline, `CrashLog`'s real rolling file + 2MB trim, the DB
+open-race fix (10 concurrent inserts, all unique ids), 7-day retention
+(only the old `synced=1` row actually deleted), the new step-13
+walkthrough test (a brand-new `DbService` over the same on-disk file
+after a simulated "relaunch" sees the row a previous instance wrote:
+`total=1 pending=1`), and the 15-minute soak — real run, not
+shortened: `submitted=20 requests=20 total=20 pending=0 sent=20
+consecutiveFailures=0 lastError=null`, RSS `first=171753472
+last=34775040 max=174645248` (last sample well below first — no
+growth), and no `app.log` written (a healthy run logs nothing, so its
+absence is itself the "log file doesn't grow" confirmation).
+Also fixed the two remaining FIX-04 §5 items in this session: the
+English sub-labels now read `Excellent / Good / Satisfactory / Poor /
+Very poor` exactly (`lib/widgets/rating_button.dart` had guessed `Very
+Good`/`Very Poor` last session, pending confirmation — now corrected).
+
 DONE (FIX-04 §3 — 15-minute soak, recovered from a session that hit its
 limit before this got written up): the previous session's terminal
 output (not trusted from a stale PROGRESS.md, since the limit cut off
