@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -7,7 +9,6 @@ import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/responsive.dart';
 import '../theme/tokens.dart';
-import '../widgets/app_alerts.dart';
 import '../widgets/feedback_dialog.dart';
 import '../widgets/marquee_bar.dart';
 import '../widgets/negative_dialog.dart';
@@ -38,10 +39,14 @@ class FeedbackScreen extends StatefulWidget {
   State<FeedbackScreen> createState() => _FeedbackScreenState();
 }
 
-class _FeedbackScreenState extends State<FeedbackScreen> {
+class _FeedbackScreenState extends State<FeedbackScreen>
+    with WidgetsBindingObserver {
   static const _defaultHeading = 'আমাদের সেবার মান কেমন ছিল?';
   static const _offlineFallback =
       'ইন্টারনেট সংযোগ দিন, যাতে ফিডব্যাকগুলো sync হতে পারে।';
+
+  /// FIX-03 §2: 4 seconds, not the old 1500ms.
+  static const _successToastDuration = Duration(milliseconds: 4000);
 
   late final ApiService _api = widget.api ?? ApiService();
   late final StorageService _storage = widget.storage ?? StorageService();
@@ -59,14 +64,38 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   // same rating tapped twice or five different ones tapped in a burst.
   bool _dialogOpen = false;
 
+  OverlayEntry? _successEntry;
+  Timer? _successTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadLogo();
     _loadMarquee();
     _prefetchCategories();
     // The queue worker (FIX-02 §1) is started once in main() and outlives
     // this screen — nothing to start or dispose here.
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dismissSuccessToast();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // FIX-03 §2: "if the app is backgrounded and comes back while the
+    // message is up, the message is gone. Do not resume a stale timer."
+    // The simplest thing that satisfies this exactly: any transition away
+    // from `resumed` removes the toast outright — there is nothing to
+    // "resume" once it no longer exists, so coming back to `resumed` later
+    // needs no special handling at all.
+    if (state != AppLifecycleState.resumed) {
+      _dismissSuccessToast();
+    }
   }
 
   /// Pre-warms the category cache at launch (§4.2) so the negative dialog's
@@ -116,6 +145,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   // arrives *while a dialog is open* is dropped.
   Future<void> _handleRatingTap(String rating) async {
     if (_dialogOpen) return;
+    // FIX-03 §2: "if someone taps a face while the message is up, the
+    // message closes immediately and the new dialog opens" — a kiosk with
+    // two people queued cannot make the second wait out an animation.
+    _dismissSuccessToast();
     _dialogOpen = true;
     SubmitResult? result;
     try {
@@ -126,9 +159,30 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       _dialogOpen = false;
     }
     if (result is SubmitSuccess && mounted) {
-      await showSuccessAlert(context,
-          title: 'ধন্যবাদ!', message: result.message);
+      _showSuccessToast(result.message);
     }
+  }
+
+  void _dismissSuccessToast() {
+    _successTimer?.cancel();
+    _successTimer = null;
+    _successEntry?.remove();
+    _successEntry = null;
+  }
+
+  /// Non-blocking (FIX-03 §2): an [OverlayEntry], not a `showDialog` modal —
+  /// there is no barrier, so it can never intercept the tap that's supposed
+  /// to dismiss it early or open the next dialog.
+  void _showSuccessToast(String message) {
+    _dismissSuccessToast();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) =>
+          _SuccessToast(message: message, onTap: _dismissSuccessToast),
+    );
+    _successEntry = entry;
+    Overlay.of(context).insert(entry);
+    _successTimer = Timer(_successToastDuration, _dismissSuccessToast);
   }
 
   Future<SubmitResult?> _showPositiveDialog(String rating) {
@@ -385,6 +439,69 @@ class _RatingRow extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The submit-success shape (§3.5), now a non-blocking overlay rather than a
+/// modal (FIX-03 §2): tapping it dismisses it early; tapping anywhere else —
+/// including a rating card behind it — reaches whatever's underneath, since
+/// there's no barrier at all, only this centred card.
+class _SuccessToast extends StatelessWidget {
+  const _SuccessToast({required this.message, required this.onTap});
+
+  final String message;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Material(
+          color: AppTokens.ivory,
+          elevation: 8,
+          shadowColor: Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.check_circle,
+                  color: AppTokens.verdant,
+                  size: 46,
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'ধন্যবাদ!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: AppTheme.headingFontFamily,
+                    fontFamilyFallback: AppTheme.bengaliFallback,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                    color: AppTokens.ink,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontFamilyFallback: AppTheme.bengaliFallback,
+                    fontSize: 14,
+                    color: AppTokens.inkMid,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

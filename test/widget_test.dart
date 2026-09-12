@@ -1157,6 +1157,157 @@ void main() {
     );
   });
 
+  group('FIX-03 §2: success message — 4s, non-blocking', () {
+    testWidgets('the message auto-dismisses at 4s, not the old 1500ms',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('জমা দিন'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      expect(find.text('ধন্যবাদ!'), findsOneWidget);
+
+      // Still up well after the old 1500ms cutoff.
+      await tester.pump(const Duration(milliseconds: 2000));
+      expect(find.text('ধন্যবাদ!'), findsOneWidget);
+
+      // Gone by 4s.
+      await tester.pump(const Duration(milliseconds: 2100));
+      expect(find.text('ধন্যবাদ!'), findsNothing);
+
+      // Let the row's own 5s-after-insert queue-worker timer fire too, so
+      // no pending timer remains at teardown.
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('tapping the message dismisses it early',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(RatingButton).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('জমা দিন'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      expect(find.text('ধন্যবাদ!'), findsOneWidget);
+      await tester.tap(find.text('ধন্যবাদ!'));
+      await tester.pump();
+
+      expect(find.text('ধন্যবাদ!'), findsNothing);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets(
+      'tapping a new rating while the message is up closes it immediately '
+      'and opens the new dialog — the message never blocks the next tap',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(find.text('জমা দিন'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('ধন্যবাদ!'), findsOneWidget);
+
+        // A second person walks up immediately, well inside the 4s window —
+        // this must work right away, not after the message finishes.
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('ধন্যবাদ!'), findsNothing);
+        expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsOneWidget);
+
+        // Close the second dialog and let both its 60s idle timer and the
+        // first row's 5s queue-worker timer resolve, so nothing is pending
+        // at teardown.
+        await tester.tap(find.text('বাতিল'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump(const Duration(seconds: 6));
+      },
+    );
+
+    testWidgets(
+      'backgrounding the app while the message is up removes it, with no '
+      'stale timer resuming later',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(find.text('জমা দিন'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('ধন্যবাদ!'), findsOneWidget);
+
+        tester.binding
+            .handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump();
+        expect(find.text('ধন্যবাদ!'), findsNothing);
+
+        tester.binding
+            .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 5));
+        expect(find.text('ধন্যবাদ!'), findsNothing);
+        await tester.pump(const Duration(seconds: 2));
+      },
+    );
+  });
+
   group('FIX-03 §8: interaction hardening', () {
     testWidgets('double-tapping a rating opens only one dialog',
         (WidgetTester tester) async {
