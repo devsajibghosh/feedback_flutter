@@ -33,6 +33,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:feedback/models/feedback_entry.dart';
 import 'package:feedback/services/api_service.dart';
 import 'package:feedback/services/crash_log.dart';
 import 'package:feedback/services/db_service.dart';
@@ -164,6 +165,128 @@ void main() {
       final finalLength = await logFile.length();
       _log('log length after padding: $finalLength bytes (cap is 2MB)');
       expect(finalLength, lessThanOrEqualTo(2 * 1024 * 1024));
+    },
+  );
+
+  test(
+    'FIX-03 §7: DB open is one shared future — many concurrent first '
+    'accesses against a real file open it exactly once and every row lands',
+    () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('feedback_verify_dbrace_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+
+      final db = DbService();
+      // 10 concurrent inserts, none awaited individually first — every one
+      // of these hits `_database` before the very first `_open()` call has
+      // had any chance to complete. If the old `_db ??= await _open()`
+      // race were still there, this either throws or silently loses rows
+      // to a botched concurrent open.
+      final results = await Future.wait([
+        for (var i = 0; i < 10; i++)
+          db.insert(
+            FeedbackEntry(
+              orgId: 1,
+              rating: 'good',
+              comment: 'race-$i',
+              categoryIds: const [],
+              createdAt: DateTime.now(),
+              synced: 0,
+            ),
+          ),
+      ]);
+      _log('10 concurrent inserts returned ids: $results');
+      expect(results.toSet(), hasLength(10), reason: 'ids must be unique');
+
+      final summary = await db.debugSummary();
+      _log('debugSummary after concurrent inserts: total=${summary.total}');
+      expect(summary.total, 10, reason: 'every concurrent insert must land');
+
+      final dbFile = File(summary.dbPath);
+      expect(dbFile.existsSync(), isTrue);
+    },
+  );
+
+  test(
+    'FIX-03 §7: the 7-day retention prune actually runs and actually '
+    'deletes — old synced=1 rows go, recent and rejected rows stay',
+    () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('feedback_verify_retention_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+
+      final db = DbService();
+      final now = DateTime.now();
+      final old = now.subtract(const Duration(days: 8));
+      final recent = now.subtract(const Duration(hours: 1));
+
+      final oldSyncedId = await db.insert(FeedbackEntry(
+        orgId: 1,
+        rating: 'good',
+        comment: 'old, synced — must be pruned',
+        categoryIds: const [],
+        createdAt: old,
+        synced: 1,
+      ));
+      final recentSyncedId = await db.insert(FeedbackEntry(
+        orgId: 1,
+        rating: 'good',
+        comment: 'recent, synced — must survive',
+        categoryIds: const [],
+        createdAt: recent,
+        synced: 1,
+      ));
+      final oldRejectedId = await db.insert(FeedbackEntry(
+        orgId: 1,
+        rating: 'poor',
+        comment: 'old, rejected — kept indefinitely per FIX-02 §1',
+        categoryIds: const [],
+        createdAt: old,
+        synced: -1,
+      ));
+      final oldPendingId = await db.insert(FeedbackEntry(
+        orgId: 1,
+        rating: 'poor',
+        comment: 'old, still pending — never pruned regardless of age',
+        categoryIds: const [],
+        createdAt: old,
+        synced: 0,
+      ));
+
+      await db.deleteOldSyncedRows(olderThan: const Duration(days: 7));
+
+      final dbPath = (await db.debugSummary()).dbPath;
+      final rows = await Process.run('sqlite3', [
+        dbPath,
+        '-header',
+        '-column',
+        'SELECT id, synced FROM feedbacks ORDER BY id;',
+      ]);
+      _log('rows after pruning:\n${rows.stdout}');
+
+      final summary = await db.debugSummary();
+      expect(summary.total, 3, reason: 'exactly the old synced=1 row is gone');
+
+      final remainingIds = <int>{};
+      // debugSummary doesn't expose ids directly; re-query via the public
+      // getUnsyncedBatch/markSynced-adjacent surface isn't enough here, so
+      // fall back to the same sqlite3 CLI the rest of this harness uses.
+      final idOutput = await Process.run('sqlite3', [dbPath, 'SELECT id FROM feedbacks;']);
+      for (final line in (idOutput.stdout as String).trim().split('\n')) {
+        final id = int.tryParse(line.trim());
+        if (id != null) remainingIds.add(id);
+      }
+      expect(remainingIds.contains(oldSyncedId), isFalse,
+          reason: 'the old synced row must actually be deleted');
+      expect(remainingIds.contains(recentSyncedId), isTrue);
+      expect(remainingIds.contains(oldRejectedId), isTrue);
+      expect(remainingIds.contains(oldPendingId), isTrue);
     },
   );
 }

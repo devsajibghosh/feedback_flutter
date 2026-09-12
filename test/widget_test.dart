@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -1731,6 +1732,95 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
     });
+  });
+
+  group('FIX-03 §7: stability audit', () {
+    test(
+      'a malformed/non-JSON response (a captive-portal page, say) is '
+      'treated as a failure, never parsed as success',
+      () async {
+        final server =
+            await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        server.listen((request) async {
+          request.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType.html
+            ..write('<html><body>Please log in to the wifi</body></html>');
+          await request.response.close();
+        });
+
+        final api = ApiService(
+          baseUrl: 'http://127.0.0.1:${server.port}',
+        );
+
+        SubmitResult? result;
+        Object? error;
+        try {
+          result = await api.submitFeedback(orgId: 1, rating: 'poor');
+        } catch (e) {
+          error = e;
+        }
+
+        // Either outcome is acceptable — a thrown DioException (the JSON
+        // transformer rejecting non-JSON content) or a SubmitFailure — as
+        // long as it is never SubmitSuccess.
+        expect(result, isNot(isA<SubmitSuccess>()));
+        if (error != null) {
+          expect(error, isA<DioException>());
+        }
+      },
+    );
+
+    testWidgets(
+      'rotating 20 times with a dialog open, text typed, and a category '
+      'selected leaks nothing and loses nothing',
+      (WidgetTester tester) async {
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService()
+          ..categories = const [Category(id: 1, name: 'দেরি')];
+
+        const portrait = Size(800, 1280);
+        const landscape = Size(1280, 800);
+        tester.view.physicalSize = portrait;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        await tester.tap(find.text('দেরি'));
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'ঘূর্ণন পরীক্ষা');
+        await tester.pump();
+
+        for (var i = 0; i < 20; i++) {
+          tester.view.physicalSize = i.isEven ? landscape : portrait;
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+        }
+
+        // State survived 20 rotations.
+        expect(find.text('ঘূর্ণন পরীক্ষা'), findsOneWidget);
+        final labelStyle = tester.widget<Text>(find.text('দেরি')).style;
+        expect(labelStyle?.color, const Color(0xFFFFFFFF));
+
+        // Close cleanly so nothing (the 60s idle timer, the dialog's
+        // AnimationController) is left pending — if anything leaked, the
+        // test framework's own teardown invariant check catches it.
+        await tester.tap(find.text('বাতিল'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+      },
+    );
   });
 }
 

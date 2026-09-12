@@ -41,41 +41,49 @@ class _PositiveDialogContentState extends State<PositiveDialogContent> {
     if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
 
-    // A broad catch here, not just `on DioException`: with submit now
-    // local-first (FIX-02 §1), the only way this can fail is the local
-    // insert itself (a full disk, a locked database) — anything thrown
-    // must still reset isSubmitting and tell the user something happened,
-    // instead of leaving the button stuck and the failure silent.
-    SubmitResult? result;
-    Object? error;
-    StackTrace? stackTrace;
+    // FIX-03 §7: the button-gating flag resets in a `finally`, so no path
+    // through here — however it exits — can leave Submit stuck showing its
+    // spinner forever.
     try {
-      result = await _sync.submit(orgId: widget.orgId, rating: widget.rating);
-    } catch (e, st) {
-      error = e;
-      stackTrace = st;
-    }
+      // A broad catch here, not just `on DioException`: with submit now
+      // local-first (FIX-02 §1), the only way this can fail is the local
+      // insert itself (a full disk, a locked database) — anything thrown
+      // must still tell the user something happened, instead of the
+      // failure being silent.
+      SubmitResult? result;
+      Object? error;
+      StackTrace? stackTrace;
+      try {
+        result =
+            await _sync.submit(orgId: widget.orgId, rating: widget.rating);
+      } catch (e, st) {
+        error = e;
+        stackTrace = st;
+      }
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (error != null) {
-      setState(() => _isSubmitting = false);
-      unawaited(CrashLog.record('PositiveDialog._submit', error, stackTrace));
-      await showGenericErrorAlert(context);
-      return;
-    }
-
-    switch (result!) {
-      case SubmitSuccess():
-        await widget.close(result);
-      case SubmitFailure(:final message):
-        setState(() => _isSubmitting = false);
-        await showErrorAlert(
-          context,
-          title: 'দুঃখিত',
-          message: message,
-          confirmLabel: 'OK',
+      if (error != null) {
+        unawaited(
+          CrashLog.record('PositiveDialog._submit', error, stackTrace),
         );
+        await showGenericErrorAlert(context);
+        return;
+      }
+
+      switch (result!) {
+        case SubmitSuccess():
+          await widget.close(result);
+        case SubmitFailure(:final message):
+          await showErrorAlert(
+            context,
+            title: 'দুঃখিত',
+            message: message,
+            confirmLabel: 'OK',
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 

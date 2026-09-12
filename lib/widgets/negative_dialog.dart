@@ -118,45 +118,52 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
 
     setState(() => _isSubmitting = true);
 
-    // §2/§3 fix: a broad catch here, not just `on DioException`. Anything
-    // _sync.submit() throws — a local db error, anything — must still
-    // reset isSubmitting and tell the user something happened, instead of
-    // leaving the button stuck and the failure silent.
-    SubmitResult? result;
-    Object? error;
-    StackTrace? stackTrace;
+    // FIX-03 §7: the button-gating flag resets in a `finally`, so no path
+    // through here — however it exits — can leave Submit stuck showing its
+    // spinner forever.
     try {
-      result = await _sync.submit(
-        orgId: widget.orgId,
-        rating: widget.rating,
-        comment: comment,
-        categoryIds: _selectedCategoryIds.toList(),
-      );
-    } catch (e, st) {
-      error = e;
-      stackTrace = st;
-    }
-
-    if (!mounted) return;
-
-    if (error != null) {
-      setState(() => _isSubmitting = false);
-      unawaited(CrashLog.record('NegativeDialog._submit', error, stackTrace));
-      await showGenericErrorAlert(context);
-      return;
-    }
-
-    switch (result!) {
-      case SubmitSuccess():
-        await widget.close(result);
-      case SubmitFailure(:final message):
-        setState(() => _isSubmitting = false);
-        await showErrorAlert(
-          context,
-          title: 'ভুল বা ত্রুটি',
-          message: message,
-          confirmLabel: 'OK',
+      // §2/§3 fix: a broad catch here, not just `on DioException`. Anything
+      // _sync.submit() throws — a local db error, anything — must still
+      // tell the user something happened, instead of the failure being
+      // silent.
+      SubmitResult? result;
+      Object? error;
+      StackTrace? stackTrace;
+      try {
+        result = await _sync.submit(
+          orgId: widget.orgId,
+          rating: widget.rating,
+          comment: comment,
+          categoryIds: _selectedCategoryIds.toList(),
         );
+      } catch (e, st) {
+        error = e;
+        stackTrace = st;
+      }
+
+      if (!mounted) return;
+
+      if (error != null) {
+        unawaited(
+          CrashLog.record('NegativeDialog._submit', error, stackTrace),
+        );
+        await showGenericErrorAlert(context);
+        return;
+      }
+
+      switch (result!) {
+        case SubmitSuccess():
+          await widget.close(result);
+        case SubmitFailure(:final message):
+          await showErrorAlert(
+            context,
+            title: 'ভুল বা ত্রুটি',
+            message: message,
+            confirmLabel: 'OK',
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 

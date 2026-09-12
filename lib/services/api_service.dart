@@ -160,11 +160,22 @@ class ApiService {
       '/feedback/store',
       data: formData,
     );
-    final data = response.data ?? const <String, dynamic>{};
-    final message = data['message']?.toString() ?? '';
+    final rawData = response.data;
+    // FIX-03 §7: a malformed or unexpected body — a captive-portal login
+    // page real hospital wifi serves for every request until someone signs
+    // in, say — must be treated as a failure, never parsed as success.
+    // Non-JSON content already throws before reaching here (Dio's JSON
+    // transformer rejects it), but this also covers a response that *is*
+    // valid JSON just not the shape expected (a bare array, a string, an
+    // accidental `{"status":"success"}` from a misbehaving proxy that
+    // returns the same placeholder body for everything it intercepts).
+    if (rawData is! Map<String, dynamic>) {
+      return const SubmitFailure('');
+    }
+    final message = rawData['message']?.toString() ?? '';
     // Mirrors the Electron background-sync check (§4.8): a 2xx response
     // whose body doesn't actually claim success is still a failure.
-    final ok = data['status'] == 'success' || data['success'] == true;
+    final ok = rawData['status'] == 'success' || rawData['success'] == true;
     return ok ? SubmitSuccess(message) : SubmitFailure(message);
   }
 }

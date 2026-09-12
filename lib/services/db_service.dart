@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -21,14 +23,41 @@ const _requiredColumns = {
 /// migration — so a column added later still gets picked up on an
 /// existing install.
 class DbService {
-  Database? _db;
   String? _dbPath;
 
-  Future<Database> get _database async => _db ??= await _open();
+  // FIX-03 §7: "DB open is one shared future. No race on first launch."
+  // The previous `_db ??= await _open()` had exactly that race — checking
+  // `_db == null` and assigning it are separated by an `await`, so two
+  // callers that both reach the getter before the first open finishes (a
+  // very real scenario: SyncService.start()'s retention cleanup and a
+  // user's first submit can both fire within milliseconds of launch) would
+  // each see `_db == null` and each start their own `_open()`. Caching the
+  // *Future* itself instead closes that gap: the null-check-and-assign is
+  // one synchronous expression with no `await` in between, so every caller
+  // — no matter how close together — awaits the exact same in-flight open.
+  Future<Database>? _dbFuture;
+
+  // FIX-03 §7: "a broken database must not brick the kiosk" — a cached
+  // *failed* future would otherwise be permanent (`??=` only ever assigns
+  // once), turning one transient failure (a momentarily-full disk during
+  // boot, say) into "never works again for the rest of this process." On
+  // failure, the slot is cleared so the *next* access gets a fresh
+  // `_open()` attempt, while every caller that was already waiting on
+  // *this* attempt still correctly receives its error.
+  Future<Database> get _database {
+    return (_dbFuture ??= _open()).catchError((Object error) {
+      _dbFuture = null;
+      throw error;
+    });
+  }
 
   Future<Database> _open() async {
     final documentsDir = await getApplicationDocumentsDirectory();
-    final dbPath = p.join(documentsDir.path, 'FeedbackSystem', 'feedback.db');
+    final dbDir = Directory(p.join(documentsDir.path, 'FeedbackSystem'));
+    // FIX-03 §7: "Directory created before the first open attempt." SQLite
+    // itself never creates missing parent directories.
+    await dbDir.create(recursive: true);
+    final dbPath = p.join(dbDir.path, 'feedback.db');
     _dbPath = dbPath;
 
     final db = await openDatabase(

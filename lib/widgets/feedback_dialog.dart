@@ -277,7 +277,11 @@ class _DialogCardState extends State<_DialogCard> {
   /// those can change whether there's anything left to scroll to without
   /// the user having scrolled at all.
   void _updateFade() {
-    if (!_scrollController.hasClients) return;
+    // Defensive against a post-frame callback firing after this card has
+    // already been disposed (FIX-03 §7) — `hasClients` alone already
+    // covers the common case (a disposed ScrollController has none), but
+    // an explicit check costs nothing and removes any doubt.
+    if (!mounted || !_scrollController.hasClients) return;
     final position = _scrollController.position;
     final canScrollMore =
         position.maxScrollExtent > 0 && position.pixels < position.maxScrollExtent - 1;
