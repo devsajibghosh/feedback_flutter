@@ -176,7 +176,7 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
         DialogBody(
           children: [
             const _NoticeStrip(
-              text: 'আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।',
+              text: 'এক বা একাধিক কারণ বেছে নিতে পারেন',
             ),
             _CategoryList(
               categories: _categories,

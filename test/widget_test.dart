@@ -1955,7 +1955,7 @@ void main() {
         );
         // The notice strip is unaffected — only the head collapses.
         expect(
-          find.text('আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।'),
+          find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'),
           findsOneWidget,
         );
 
@@ -2032,9 +2032,43 @@ void main() {
           find.text('অন্য কারণ থাকলে এখানে লিখুন'),
         );
         final notice = tester.widget<Text>(
-          find.text('আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।'),
+          find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'),
         );
         expect(notice.style?.fontSize, label.style?.fontSize);
+      },
+    );
+  });
+
+  group('FIX-05 §2: apology strip replaced', () {
+    testWidgets(
+      'the old apology sentence is gone and the moved subtitle text '
+      'appears exactly once in the dialog',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(
+          find.text(
+            'আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।',
+          ),
+          findsNothing,
+        );
+        expect(
+          find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'),
+          findsOneWidget,
+        );
       },
     );
   });
