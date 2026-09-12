@@ -333,6 +333,20 @@ class _CommentFieldState extends State<_CommentField> {
     super.initState();
     _focusNode.addListener(() {
       setState(() => _focused = _focusNode.hasFocus);
+      if (_focusNode.hasFocus) {
+        // Scrolls the field above the keyboard as soon as it's focused
+        // (FIX-03 §3), rather than leaving the user to discover they need
+        // to scroll themselves.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Scrollable.ensureVisible(
+            context,
+            alignment: 0.1,
+            duration: AppTokens.durFast,
+            curve: AppTokens.curveStandard,
+          );
+        });
+      }
     });
   }
 
@@ -369,6 +383,9 @@ class _CommentFieldState extends State<_CommentField> {
         controller: widget.controller,
         focusNode: _focusNode,
         maxLines: null,
+        textInputAction: TextInputAction.done,
+        onEditingComplete: () => FocusScope.of(context).unfocus(),
+        onChanged: (_) => DialogIdleScope.maybeOf(context)?.onInteraction(),
         style: const TextStyle(
           fontFamily: AppTheme.bodyFontFamily,
           fontFamilyFallback: AppTheme.bengaliFallback,

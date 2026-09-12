@@ -803,6 +803,223 @@ void main() {
       },
     );
   });
+
+  group('FIX-03 §3: dialog scroll + keyboard', () {
+    // Widget tests never raise a real on-screen keyboard just by focusing a
+    // field — that's exactly the gap that let the original bug through 44
+    // passing tests. `tester.view.viewInsets` simulates the one thing that
+    // actually matters here: MediaQuery.viewInsets.bottom becoming nonzero,
+    // which is the real mechanism the fix reacts to.
+    testWidgets(
+      'phone landscape with keyboard open (~150px available): comment field '
+      'and Submit are both reachable by scrolling, no overflow',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(915, 412);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetViewInsets);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService()
+          ..categories = const [Category(id: 1, name: 'দেরি')];
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        // Leaves ~150 logical px above the keyboard — FIX-03 §3's explicit
+        // worst case.
+        tester.view.viewInsets = const FakeViewPadding(bottom: 262);
+        await tester.pump();
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+
+        await tester.ensureVisible(find.byType(TextField));
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'কষ্ট করে লিখছি');
+        await tester.pump();
+        expect(find.text('কষ্ট করে লিখছি'), findsOneWidget);
+
+        await tester.ensureVisible(find.text('ফিডব্যাক জমা দিন'));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('ফিডব্যাক জমা দিন'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('ধন্যবাদ!'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 5));
+      },
+    );
+
+    for (final size in [
+      const Size(360, 640), // small phone, portrait
+      const Size(640, 360), // small phone, landscape
+      const Size(412, 915), // large phone, portrait
+      const Size(915, 412), // large phone, landscape
+    ]) {
+      testWidgets(
+        'negative dialog with keyboard open at '
+        '${size.width.toInt()}x${size.height.toInt()}: no overflow, Submit reachable',
+        (WidgetTester tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetViewInsets);
+          SharedPreferences.setMockInitialValues({'org_id': 7});
+          final api = _FakeApiService()
+            ..categories = const [
+              Category(id: 1, name: 'দেরি'),
+              Category(id: 2, name: 'ব্যবহার'),
+            ];
+
+          await tester.pumpWidget(
+            MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          await tester.tap(find.byType(RatingButton).last);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.pump();
+
+          // A software keyboard covers roughly 40% of the screen on a real
+          // device.
+          tester.view.viewInsets = FakeViewPadding(bottom: size.height * 0.4);
+          await tester.pump();
+          await tester.pump();
+
+          expect(tester.takeException(), isNull);
+          await tester.ensureVisible(find.text('ফিডব্যাক জমা দিন'));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
+    testWidgets(
+      'rotating with the keyboard open, text typed, and a category selected '
+      'loses nothing',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(800, 1280);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetViewInsets);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService()
+          ..categories = const [Category(id: 1, name: 'দেরি')];
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        await tester.tap(find.text('দেরি'));
+        await tester.pump();
+        await tester.enterText(find.byType(TextField), 'আমার মন্তব্য');
+        await tester.pump();
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+        await tester.pump();
+
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('আমার মন্তব্য'), findsOneWidget);
+        final labelStyle = tester.widget<Text>(find.text('দেরি')).style;
+        expect(labelStyle?.color, const Color(0xFFFFFFFF));
+      },
+    );
+  });
+
+  group('FIX-03 §9: idle reset', () {
+    testWidgets(
+      '60s with no interaction silently closes the dialog and discards state',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService()
+          ..categories = const [Category(id: 1, name: 'দেরি')];
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        await tester.enterText(find.byType(TextField), 'অসম্পূর্ণ মন্তব্য');
+        await tester.pump();
+
+        await tester.pump(const Duration(seconds: 60));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump();
+
+        expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsNothing);
+        // Discarded silently, not submitted.
+        expect(find.text('ধন্যবাদ!'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'interaction resets the idle timer so a genuine in-progress comment '
+      'is not cut off mid-sentence',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService()
+          ..categories = const [Category(id: 1, name: 'দেরি')];
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        // Two windows that individually stay under 60s but together exceed
+        // it — only possible to still be open if each keystroke really did
+        // reset the clock.
+        await tester.pump(const Duration(seconds: 45));
+        await tester.enterText(find.byType(TextField), 'আমি একটি দীর্ঘ');
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 45));
+        await tester.enterText(
+          find.byType(TextField),
+          'আমি একটি দীর্ঘ মন্তব্য লিখছি',
+        );
+        await tester.pump();
+
+        expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsOneWidget);
+      },
+    );
+  });
 }
 
 /// Simulates the db layer itself failing (e.g. disk error) to prove a sync

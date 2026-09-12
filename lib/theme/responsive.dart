@@ -10,16 +10,25 @@ import 'package:flutter/widgets.dart';
 /// so it stays stable across rotation; `height` is tracked separately only
 /// to detect the "phone in landscape" short-height case.
 class Responsive {
-  const Responsive._(this.size);
+  const Responsive._(this.size, this.viewInsetsBottom);
 
-  factory Responsive.of(BuildContext context) =>
-      Responsive._(MediaQuery.sizeOf(context));
+  factory Responsive.of(BuildContext context) => Responsive._(
+        MediaQuery.sizeOf(context),
+        MediaQuery.viewInsetsOf(context).bottom,
+      );
 
   final Size size;
+
+  /// The on-screen keyboard's height, or 0 when it's closed. Tracked here
+  /// (rather than read raw from `MediaQuery` at each call site) so the
+  /// dialog's available height can react to it the same way every other
+  /// size in this class reacts to screen size (FIX-03 §3).
+  final double viewInsetsBottom;
 
   double get width => size.width;
   double get height => size.height;
   double get shortestSide => size.shortestSide;
+  bool get isKeyboardOpen => viewInsetsBottom > 0;
 
   static const _compactMax = 600.0;
   static const _mediumMax = 840.0;
@@ -129,6 +138,15 @@ class Responsive {
   // ── Feedback dialog (§6) ─────────────────────────────────────────────
   double get dialogMaxWidth => width - 32 < 880 ? width - 32 : 880;
   double get dialogMaxHeightFraction => isShortHeight ? 0.95 : 0.9;
+
+  /// The dialog's actual height budget (FIX-03 §3): `MediaQuery.size.height`
+  /// alone never shrinks when the keyboard appears, so `viewInsetsBottom`
+  /// must be subtracted first — recomputed on every build because
+  /// [Responsive.of] depends on both `MediaQuery.sizeOf` and
+  /// `MediaQuery.viewInsetsOf`, which change on keyboard show/hide and on
+  /// rotation.
+  double get dialogMaxHeight =>
+      (height - viewInsetsBottom).clamp(0.0, height) * dialogMaxHeightFraction;
 
   double get dialogTitleSize => _scale(
         compactPortrait: 24,

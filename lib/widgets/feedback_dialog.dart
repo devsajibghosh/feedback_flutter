@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -12,6 +14,59 @@ typedef DialogContentBuilder = Widget Function(
   BuildContext context,
   DialogCloser close,
 );
+
+/// The idle timeout for an open dialog (FIX-03 §9): a hospital complaint
+/// half-typed and abandoned should not be readable by the next person in
+/// line, so a dialog nobody has touched for this long closes itself and
+/// discards everything.
+const _idleTimeout = Duration(seconds: 60);
+
+/// Global escape hatch for FIX-03 §8's "a stuck dialog is unacceptable": if
+/// anything throws anywhere while a feedback dialog is open, the app-level
+/// error handlers in `main.dart` call [FeedbackDialogGuard.closeActiveDialog]
+/// so the kiosk falls back to the rating screen instead of sitting on a
+/// broken, unresponsive dialog with nobody around to restart it. At most one
+/// dialog is ever open at a time (the barrier isn't dismissible and rating
+/// taps are debounced), so a single slot is enough.
+class FeedbackDialogGuard {
+  FeedbackDialogGuard._();
+
+  static VoidCallback? _closeActive;
+
+  static void closeActiveDialog() {
+    final closer = _closeActive;
+    if (closer == null) return;
+    try {
+      closer();
+    } catch (_) {
+      // The graceful close itself is broken — nothing more we can safely
+      // try from a global error handler. Leaving the kiosk showing a
+      // dialog is still bad, but re-throwing from an error handler would
+      // be worse.
+    }
+  }
+}
+
+/// Broadcasts "something happened inside this dialog" down to content that
+/// isn't a descendant of the pointer-catching [Listener] alone — specifically
+/// keystrokes in the comment field, which don't generate a new pointer-down
+/// event per character (FIX-03 §9: "reset on every keystroke, not just on
+/// open").
+class DialogIdleScope extends InheritedWidget {
+  const DialogIdleScope({
+    super.key,
+    required this.onInteraction,
+    required super.child,
+  });
+
+  final VoidCallback onInteraction;
+
+  static DialogIdleScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DialogIdleScope>();
+
+  @override
+  bool updateShouldNotify(DialogIdleScope oldWidget) => false;
+}
 
 /// Opens the shared feedback modal shell (§3.4): centred, `ivory`, radius
 /// 28, barrier at black 55% with dismiss disabled — only [DialogCloser] or
@@ -48,6 +103,14 @@ class _FeedbackDialogShell extends StatefulWidget {
 class _FeedbackDialogShellState extends State<_FeedbackDialogShell>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  Timer? _idleTimer;
+
+  // A stable per-instance reference, so dispose() only clears the guard
+  // slot if it's still pointing at *this* dialog (defensive; in practice
+  // only one dialog is ever open at a time, since the barrier isn't
+  // dismissible and rating taps are debounced). `_close` accepts an
+  // optional arg, so the bare tear-off already satisfies VoidCallback.
+  late final VoidCallback _closeRef = _close;
 
   @override
   void initState() {
@@ -56,56 +119,120 @@ class _FeedbackDialogShellState extends State<_FeedbackDialogShell>
       vsync: this,
       duration: const Duration(milliseconds: 320),
     )..forward();
+    FeedbackDialogGuard._closeActive = _closeRef;
+    _resetIdleTimer();
   }
 
   @override
   void dispose() {
+    _idleTimer?.cancel();
+    if (identical(FeedbackDialogGuard._closeActive, _closeRef)) {
+      FeedbackDialogGuard._closeActive = null;
+    }
     _controller.dispose();
     super.dispose();
   }
 
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleTimeout, _handleIdleTimeout);
+  }
+
+  void _handleIdleTimeout() {
+    if (!mounted) return;
+    // Silent discard (FIX-03 §9): no submit, no message, no animation
+    // beyond the dialog's own normal dismiss.
+    _close();
+  }
+
   Future<void> _close([Object? result]) async {
-    _controller.duration = const Duration(milliseconds: 280);
-    await _controller.reverse();
+    _idleTimer?.cancel();
+    FocusManager.instance.primaryFocus?.unfocus();
+    try {
+      _controller.duration = const Duration(milliseconds: 280);
+      await _controller.reverse();
+    } catch (_) {
+      // Best-effort animation only — a broken controller must not prevent
+      // the dialog from actually closing (FIX-03 §8).
+    }
     if (mounted) Navigator.of(context).pop(result);
   }
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return PopScope(
       canPop: false,
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final reversing = _controller.status == AnimationStatus.reverse;
-            final curve = reversing
-                ? AppTokens.curveStandard
-                : AppTokens.curveDialogEnter;
-            final hiddenOffset = reversing ? 24.0 : 32.0;
-            final shown = curve.transform(_controller.value);
+      onPopInvokedWithResult: (didPop, result) {
+        // The root screen ignores the back button entirely (main.dart); a
+        // dialog on top closes on it and does nothing more (FIX-03 §8).
+        if (!didPop) _close();
+      },
+      child: Listener(
+        // Catches every tap/drag anywhere in the dialog, including on
+        // category pills and buttons nested inside their own gesture
+        // detectors — pointer-down events reach every Listener in the hit
+        // path regardless of which descendant's tap recognizer eventually
+        // wins the gesture arena.
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) => _resetIdleTimer(),
+        child: DialogIdleScope(
+          onInteraction: _resetIdleTimer,
+          child: GestureDetector(
+            // Tapping empty dialog space dismisses the keyboard without
+            // closing the dialog (FIX-03 §3). A tap that lands on the
+            // comment field re-focuses it as part of the same gesture pass,
+            // so this doesn't fight with focusing the field.
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              final focus = FocusScope.of(context);
+              if (!focus.hasPrimaryFocus && focus.focusedChild != null) {
+                focus.unfocus();
+              }
+            },
+            child: Padding(
+              // Mirrors what a Scaffold with resizeToAvoidBottomInset does
+              // for its own body: shrinks the space Center has to work
+              // with, so the dialog centres in the area still visible above
+              // the keyboard instead of behind it.
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Center(
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    final reversing =
+                        _controller.status == AnimationStatus.reverse;
+                    final curve = reversing
+                        ? AppTokens.curveStandard
+                        : AppTokens.curveDialogEnter;
+                    final hiddenOffset = reversing ? 24.0 : 32.0;
+                    final shown = curve.transform(_controller.value);
 
-            // FadeTransition rather than Opacity (FIX-02 §4): its
-            // RenderAnimatedOpacity skips compositing entirely once the
-            // value settles at 0 or 1, which is most of this animation's
-            // very short life.
-            return FadeTransition(
-              opacity: AlwaysStoppedAnimation(shown.clamp(0.0, 1.0)),
-              child: Transform.translate(
-                offset: Offset(0, (1 - shown) * hiddenOffset),
-                child: Transform.scale(
-                  scale: 0.97 + 0.03 * shown,
-                  child: child,
+                    // FadeTransition rather than Opacity (FIX-02 §4): its
+                    // RenderAnimatedOpacity skips compositing entirely once
+                    // the value settles at 0 or 1, which is most of this
+                    // animation's very short life.
+                    return FadeTransition(
+                      opacity: AlwaysStoppedAnimation(shown.clamp(0.0, 1.0)),
+                      child: Transform.translate(
+                        offset: Offset(0, (1 - shown) * hiddenOffset),
+                        child: Transform.scale(
+                          scale: 0.97 + 0.03 * shown,
+                          child: child,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: _DialogCard(
+                      isPositive: widget.isPositive,
+                      child: Builder(
+                        builder: (context) => widget.builder(context, _close),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            );
-          },
-          child: Material(
-            type: MaterialType.transparency,
-            child: _DialogCard(
-              isPositive: widget.isPositive,
-              child: Builder(
-                builder: (context) => widget.builder(context, _close),
               ),
             ),
           ),
@@ -115,20 +242,57 @@ class _FeedbackDialogShellState extends State<_FeedbackDialogShell>
   }
 }
 
-class _DialogCard extends StatelessWidget {
+class _DialogCard extends StatefulWidget {
   const _DialogCard({required this.isPositive, required this.child});
 
   final bool isPositive;
   final Widget child;
 
   @override
+  State<_DialogCard> createState() => _DialogCardState();
+}
+
+class _DialogCardState extends State<_DialogCard> {
+  final _scrollController = ScrollController();
+  bool _showBottomFade = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_updateFade);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFade());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_updateFade);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Reactive to scroll position (FIX-03 §3): shown whenever content
+  /// continues below the fold, gone once scrolled to the bottom. Also
+  /// re-checked on every metrics change (keyboard open/close, rotation,
+  /// categories loading in) via the [NotificationListener] below, since
+  /// those can change whether there's anything left to scroll to without
+  /// the user having scrolled at all.
+  void _updateFade() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final canScrollMore =
+        position.maxScrollExtent > 0 && position.pixels < position.maxScrollExtent - 1;
+    if (canScrollMore != _showBottomFade) {
+      setState(() => _showBottomFade = canScrollMore);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final responsive = Responsive.of(context);
-    final size = responsive.size;
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: 880,
-        maxHeight: size.height * responsive.dialogMaxHeightFraction,
+        maxHeight: responsive.dialogMaxHeight,
       ),
       child: Container(
         width: responsive.dialogMaxWidth,
@@ -146,13 +310,55 @@ class _DialogCard extends StatelessWidget {
               height: 4,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: isPositive
+                  colors: widget.isPositive
                       ? [AppTokens.verdant, AppTokens.verdantLit]
                       : [AppTokens.error, AppTokens.errorMid],
                 ),
               ),
             ),
-            Flexible(child: SingleChildScrollView(child: child)),
+            Flexible(
+              child: Stack(
+                children: [
+                  NotificationListener<ScrollMetricsNotification>(
+                    onNotification: (_) {
+                      WidgetsBinding.instance
+                          .addPostFrameCallback((_) => _updateFade());
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      physics: const ClampingScrollPhysics(),
+                      child: widget.child,
+                    ),
+                  ),
+                  // Soft fade so a user who can't see the submit button
+                  // still knows there's more below (FIX-03 §3) — this costs
+                  // almost nothing and is the difference between a usable
+                  // dialog and an abandoned one.
+                  if (_showBottomFade)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: IgnorePointer(
+                        child: Container(
+                          height: 24,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                AppTokens.ivory,
+                                AppTokens.ivory.withOpacity(0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -169,6 +375,14 @@ class DialogHead extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final responsive = Responsive.of(context);
+    // The worst case (FIX-03 §3): phone in landscape with the keyboard
+    // open, roughly 150 logical px available. The badge and title aren't
+    // needed while typing, so they collapse away entirely to leave room for
+    // the comment field and Submit — and reappear the instant the keyboard
+    // closes, since this is just a normal MediaQuery-driven rebuild.
+    if (responsive.isKeyboardOpen && responsive.isShortHeight) {
+      return const SizedBox.shrink();
+    }
     var padding = responsive.dialogHeadPadding;
     if (responsive.isShortHeight) {
       padding = EdgeInsets.fromLTRB(
