@@ -169,43 +169,14 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
 
   @override
   Widget build(BuildContext context) {
-    final titleSize = Responsive.of(context).dialogTitleSize;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        DialogHead(
-          children: [
-            DialogBadge(
-              icon: Icons.cancel,
-              label: 'খারাপ — মন্তব্য জানান',
-              background: AppTokens.errorLit,
-              foreground: AppTokens.error,
-              borderColor: AppTokens.error.withOpacity(0.18),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'কোথায় সমস্যা হয়েছে জানান',
-              style: TextStyle(
-                fontFamily: AppTheme.headingFontFamily,
-                fontFamilyFallback: AppTheme.bengaliFallback,
-                fontWeight: FontWeight.w700,
-                fontSize: titleSize,
-                color: AppTokens.ink,
-                letterSpacing: -0.015 * titleSize,
-                height: 1.2,
-              ),
-            ),
-          ],
-        ),
+        _NegativeDialogHead(rating: widget.rating),
         DialogBody(
           children: [
             const _NoticeStrip(
               text: 'আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।',
-            ),
-            const DialogSectionLabel(
-              icon: Icons.sell,
-              label: 'কারণ নির্বাচন করুন',
-              lightSuffix: '(একাধিক নির্বাচন করা যাবে)',
             ),
             _CategoryList(
               categories: _categories,
@@ -214,11 +185,7 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
               onToggle: _toggleCategory,
             ),
             const DialogDivider(),
-            const DialogSectionLabel(
-              icon: Icons.edit,
-              label: 'অন্য কারণ থাকলে এখানে লিখুন',
-              lightSuffix: '(ঐচ্ছিক)',
-            ),
+            const _CommentLabel(),
             _CommentField(controller: _commentController),
             const SizedBox(height: 22),
             DialogActionsRow(
@@ -230,6 +197,125 @@ class _NegativeDialogContentState extends State<NegativeDialogContent> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// The negative dialog's head (FIX-04 §1): leads with the same emoji the
+/// visitor just tapped — 🙁 for `poor`, 😞 for `very_poor` — so the dialog
+/// reads as a continuation of that tap instead of a new screen. Collapses
+/// on *any* screen size whenever the keyboard opens (not just short-height,
+/// unlike the shared [DialogHead] used by the positive dialog), since this
+/// head is now tall enough to matter everywhere, and animates over 160ms
+/// so it doesn't jump.
+class _NegativeDialogHead extends StatelessWidget {
+  const _NegativeDialogHead({required this.rating});
+
+  final String rating;
+
+  @override
+  Widget build(BuildContext context) {
+    final responsive = Responsive.of(context);
+    var padding = responsive.dialogHeadPadding;
+    if (responsive.isShortHeight) {
+      padding = EdgeInsets.fromLTRB(
+        padding.left,
+        padding.top / 2,
+        padding.right,
+        padding.bottom / 2,
+      );
+    }
+    final emoji = rating == 'very_poor' ? '😞' : '🙁';
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 160),
+      curve: AppTokens.curveStandard,
+      alignment: Alignment.topCenter,
+      child: responsive.isKeyboardOpen
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: padding,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    emoji,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: responsive.negativeHeadEmojiSize,
+                      fontFamilyFallback: const ['Noto Color Emoji'],
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'কেন সন্তুষ্ট হন নি?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: AppTheme.headingFontFamily,
+                      fontFamilyFallback: AppTheme.bengaliFallback,
+                      fontWeight: FontWeight.w700,
+                      fontSize: responsive.negativeHeadTitleSize,
+                      color: AppTokens.ink,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'এক বা একাধিক কারণ বেছে নিতে পারেন',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: AppTheme.bodyFontFamily,
+                      fontFamilyFallback: AppTheme.bengaliFallback,
+                      fontWeight: FontWeight.w400,
+                      fontSize: responsive.negativeHeadSubtitleSize,
+                      color: AppTokens.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+/// The comment field's label (FIX-04 §2): a readable prompt, not a small
+/// muted caption — no icon, `ink` at weight 600, with the optional marker
+/// kept visually secondary.
+class _CommentLabel extends StatelessWidget {
+  const _CommentLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final responsive = Responsive.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 11),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.end,
+        spacing: 6,
+        children: [
+          Text(
+            'অন্য কারণ থাকলে এখানে লিখুন',
+            style: TextStyle(
+              fontFamily: AppTheme.bodyFontFamily,
+              fontFamilyFallback: AppTheme.bengaliFallback,
+              fontSize: responsive.commentLabelSize,
+              fontWeight: FontWeight.w600,
+              color: AppTokens.ink,
+            ),
+          ),
+          Text(
+            '(ঐচ্ছিক)',
+            style: TextStyle(
+              fontFamily: AppTheme.bodyFontFamily,
+              fontFamilyFallback: AppTheme.bengaliFallback,
+              fontSize: responsive.commentLabelOptionalSize,
+              fontWeight: FontWeight.w400,
+              color: AppTokens.inkMuted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

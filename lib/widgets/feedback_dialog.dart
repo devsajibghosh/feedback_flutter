@@ -477,59 +477,6 @@ class DialogBadge extends StatelessWidget {
   }
 }
 
-/// An uppercase section label with a leading icon, used before the category
-/// list, the comment field, and (stage 6) the voice recorder (§3.4).
-class DialogSectionLabel extends StatelessWidget {
-  const DialogSectionLabel({
-    super.key,
-    required this.icon,
-    required this.label,
-    this.iconColor,
-    this.lightSuffix,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color? iconColor;
-  final String? lightSuffix;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 11),
-      child: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 6,
-        children: [
-          Icon(icon, size: 12, color: iconColor ?? AppTokens.inkMuted),
-          Text(
-            label,
-            style: const TextStyle(
-              fontFamily: AppTheme.bodyFontFamily,
-              fontFamilyFallback: AppTheme.bengaliFallback,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AppTokens.inkMuted,
-              letterSpacing: 1.32, // 0.12em * 11px
-            ),
-          ),
-          if (lightSuffix != null)
-            Text(
-              lightSuffix!,
-              style: const TextStyle(
-                fontFamily: AppTheme.bodyFontFamily,
-                fontFamilyFallback: AppTheme.bengaliFallback,
-                fontSize: 11,
-                fontWeight: FontWeight.w400,
-                color: AppTokens.inkMuted,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 /// A 1px `parchment` rule with 18px vertical margin, used between dialog
 /// body sections (§3.4).
 class DialogDivider extends StatelessWidget {

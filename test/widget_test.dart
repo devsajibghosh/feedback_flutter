@@ -18,6 +18,7 @@ import 'package:feedback/widgets/blurred_background.dart';
 import 'package:feedback/widgets/category_pill.dart';
 import 'package:feedback/widgets/feedback_dialog.dart';
 import 'package:feedback/widgets/marquee_bar.dart';
+import 'package:feedback/widgets/negative_dialog.dart';
 import 'package:feedback/widgets/positive_dialog.dart';
 import 'package:feedback/widgets/rating_button.dart';
 
@@ -309,7 +310,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pump(); // categories fetch resolves
 
-      expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsOneWidget);
+      expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
       expect(find.byType(CategoryPill), findsNWidgets(2));
       expect(find.text('দেরি'), findsOneWidget);
 
@@ -346,7 +347,7 @@ void main() {
     final spec = kRatingSpecs[i];
     final expectedTitle = i < 3
         ? 'আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'
-        : 'কোথায় সমস্যা হয়েছে জানান';
+        : 'কেন সন্তুষ্ট হন নি?';
 
     testWidgets(
       'rating "${spec.value}" opens the ${i < 3 ? "positive" : "negative"} dialog',
@@ -1126,7 +1127,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         await tester.pump();
 
-        expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsNothing);
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsNothing);
         // Discarded silently, not submitted.
         expect(find.text('ধন্যবাদ!'), findsNothing);
       },
@@ -1165,7 +1166,7 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsOneWidget);
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
       },
     );
   });
@@ -1345,7 +1346,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsNothing);
-      expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsNothing);
+      expect(find.text('কেন সন্তুষ্ট হন নি?'), findsNothing);
     });
   });
 
@@ -1448,7 +1449,7 @@ void main() {
         await tester.pump();
 
         expect(find.text('ধন্যবাদ!'), findsNothing);
-        expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsOneWidget);
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
 
         // Close the second dialog and let both its 60s idle timer and the
         // first row's 5s queue-worker timer resolve, so nothing is pending
@@ -1556,7 +1557,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
 
       expect(find.text('আপনার ইতিবাচক মতামতের\nজন্য ধন্যবাদ!'), findsNothing);
-      expect(find.text('কোথায় সমস্যা হয়েছে জানান'), findsNothing);
+      expect(find.text('কেন সন্তুষ্ট হন নি?'), findsNothing);
     });
 
     testWidgets('tapping the barrier does nothing', (WidgetTester tester) async {
@@ -1744,6 +1745,204 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
     });
+  });
+
+  group('FIX-04 §1: negative dialog header mirrors the tapped rating', () {
+    testWidgets('poor shows 🙁, not a generic icon and not 😞',
+        (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // kRatingSpecs[3] is 'poor'.
+      await tester.tap(find.byType(RatingButton).at(3));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      // Scoped to the dialog content — the rating screen behind it still
+      // has its own "😞"/"🙁" RatingButton emoji mounted (just visually
+      // covered by the modal), which a bare find.text would also match.
+      final dialog = find.byType(NegativeDialogContent);
+      expect(
+        find.descendant(of: dialog, matching: find.text('🙁')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.text('😞')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('very_poor shows 😞, not 🙁', (WidgetTester tester) async {
+      _useTabletSize(tester);
+      SharedPreferences.setMockInitialValues({'org_id': 7});
+      final api = _FakeApiService();
+
+      await tester.pumpWidget(
+        MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // kRatingSpecs[4] is 'very_poor'.
+      await tester.tap(find.byType(RatingButton).at(4));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      final dialog = find.byType(NegativeDialogContent);
+      expect(
+        find.descendant(of: dialog, matching: find.text('😞')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.text('🙁')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'the old badge, old title, and old category section label are gone',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService()
+          ..categories = const [Category(id: 1, name: 'দেরি')];
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('খারাপ — মন্তব্য জানান'), findsNothing);
+        expect(find.text('কারণ নির্বাচন করুন'), findsNothing);
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
+        expect(find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the head collapses when the keyboard opens and restores when it '
+      'closes (simulated viewInsets — a real device keyboard was not '
+      'available to test this against)',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 160));
+
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsNothing);
+        expect(find.text('এক বা একাধিক কারণ বেছে নিতে পারেন'), findsNothing);
+        // The notice strip is unaffected — only the head collapses.
+        expect(
+          find.text('আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।'),
+          findsOneWidget,
+        );
+
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 160));
+
+        expect(find.text('কেন সন্তুষ্ট হন নি?'), findsOneWidget);
+      },
+    );
+  });
+
+  group('FIX-04 §2: comment label is a larger prompt', () {
+    testWidgets(
+      'no pen icon, ink at weight 600, optional marker stays secondary',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        expect(find.byIcon(Icons.edit), findsNothing);
+
+        final label = tester.widget<Text>(
+          find.text('অন্য কারণ থাকলে এখানে লিখুন'),
+        );
+        expect(label.style?.color, const Color(0xFF1C1C1A)); // AppTokens.ink
+        expect(label.style?.fontWeight, FontWeight.w600);
+
+        final optional = tester.widget<Text>(find.text('(ঐচ্ছিক)'));
+        expect(optional.style?.fontWeight, FontWeight.w400);
+        expect(
+          optional.style!.fontSize! < label.style!.fontSize!,
+          isTrue,
+          reason: 'the optional marker must stay visually secondary',
+        );
+      },
+    );
+
+    testWidgets(
+      'the notice strip now matches the comment label size (same tier of '
+      'text)',
+      (WidgetTester tester) async {
+        _useTabletSize(tester);
+        SharedPreferences.setMockInitialValues({'org_id': 7});
+        final api = _FakeApiService();
+
+        await tester.pumpWidget(
+          MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(RatingButton).last);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+
+        final label = tester.widget<Text>(
+          find.text('অন্য কারণ থাকলে এখানে লিখুন'),
+        );
+        final notice = tester.widget<Text>(
+          find.text('আপনার সেবা দিতে না পারার জন্য আমরা আন্তরিকভাবে দুঃখিত।'),
+        );
+        expect(notice.style?.fontSize, label.style?.fontSize);
+      },
+    );
   });
 
   group('FIX-03 §7: stability audit', () {

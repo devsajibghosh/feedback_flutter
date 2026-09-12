@@ -193,9 +193,25 @@ class Responsive {
     return EdgeInsets.fromLTRB(left, 10, right, 10);
   }
 
-  double get noticeStripFontSize =>
-      _scale(compactPortrait: 14, expanded: (_) => 16);
+  /// FIX-04 §2: "if the notice strip now looks small beside [the enlarged
+  /// comment label], bump it to match — the two should read as the same
+  /// tier of text." Now the same size as [commentLabelSize] rather than
+  /// its own smaller 14–16 scale.
+  double get noticeStripFontSize => commentLabelSize;
 
   // ── Rating-grid helper text (FIX-03 §4) ─────────────────────────────
   double get helperTextSize => isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
+
+  // ── Negative dialog head (FIX-04 §1) — mirrors the tapped rating ─────
+  double get negativeHeadEmojiSize =>
+      isExpanded ? 56.0 : (isMedium ? 46.0 : 38.0);
+  double get negativeHeadTitleSize =>
+      isExpanded ? 30.0 : (isMedium ? 26.0 : 24.0);
+  double get negativeHeadSubtitleSize =>
+      isExpanded ? 15.0 : (isMedium ? 14.0 : 13.0);
+
+  // ── Comment label (FIX-04 §2) — a prompt now, not a caption ──────────
+  double get commentLabelSize => isExpanded ? 18.0 : (isMedium ? 16.0 : 15.0);
+  double get commentLabelOptionalSize =>
+      isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
 }
