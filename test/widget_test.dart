@@ -624,6 +624,54 @@ void main() {
         expect(summary.lastSuccessfulSync, isNotNull);
       },
     );
+
+    test(
+      'FIX-03 §6: reproduces the "Sent=19 / last successful sync: never" '
+      'report — lastSuccessfulSync is in-memory only and resets on every '
+      'app launch, while the synced=1 count is a persisted DB fact; a fresh '
+      'SyncService instance over a DB that already has synced rows from a '
+      'previous run shows exactly this combination, with no data loss',
+      () async {
+        // Rows already synced=1 from a *previous* run, as if the app had
+        // been restarted after successfully syncing 19 rows in an earlier
+        // process.
+        final db = _FakeDbService()
+          ..rows.addAll(
+            List.generate(
+              19,
+              (i) => FeedbackEntry(
+                id: i + 1,
+                orgId: 7,
+                rating: 'good',
+                comment: '',
+                categoryIds: const [],
+                createdAt: DateTime(2024, 1, 1).add(Duration(hours: i)),
+                synced: 1,
+              ),
+            ),
+          );
+        final api = _ScriptedApiService()
+          ..onSubmit = () async =>
+              throw StateError('no drain has run in this fresh process yet');
+
+        // A brand-new SyncService, as main() creates on every launch --
+        // never told about the previous process's successful syncs.
+        final sync = SyncService(api: api, db: db);
+        final summary = await sync.debugSummary();
+
+        expect(summary.total, 19);
+        expect(summary.bySynced[1], 19, reason: 'the 19 sent rows are real, persisted DB rows');
+        expect(summary.bySynced[0] ?? 0, 0, reason: 'nothing is stuck pending — no feedback was lost');
+        expect(
+          summary.lastSuccessfulSync,
+          isNull,
+          reason: 'this is the reported contradiction: reproduced exactly, '
+              'and it is cosmetic — lastSuccessfulSync simply has not been '
+              'set in *this* process yet, not evidence rows were marked '
+              'synced without the server accepting them',
+        );
+      },
+    );
   });
 
   testWidgets(
