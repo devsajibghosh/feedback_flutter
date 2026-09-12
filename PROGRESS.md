@@ -1,5 +1,10 @@
 # Progress Log
 
+DONE: Rebuild the signed release APK and confirm it's current, not stale. Ran `flutter build apk --release` (Gradle `assembleRelease`, 111.9s) → `build/app/outputs/flutter-apk/app-release.apk` (57.1MB), copied to the project root as `feedback.apk` per the existing convention. `apksigner verify --print-certs` confirms it's signed with the real release key (`CN=Feedback Machine, OU=Code Station 23`), not debug-signed. Freshness check the user asked for, both mtimes shown directly:
+- `feedback.apk`: **2026-09-12 20:49:29+06** (57,119,988 bytes)
+- `lib/services/db_service.dart`: **2026-09-12 19:29:35+06**
+The APK is ~80 minutes newer than the fix this time, the opposite of last time's contradiction. Went one step further than mtimes alone: extracted `libapp.so` (AOT-compiled Dart) for all three architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`) from this APK and `strings`-grepped for the exact PRAGMA literals from `db_service.dart` — `PRAGMA journal_mode = WAL` and `PRAGMA table_info(feedbacks)` are both present in every architecture's compiled binary, so this isn't just "built after the file changed," the fixed code is demonstrably compiled in.
+
 DONE: Run the 8-step local-first submit + sync pipeline verification (`flutter test tool/verify_sync_test.dart`), now that `libsqlite3-dev` is installed — real output, not code-reading. Confirmed `libsqlite3.so` (unversioned) now resolves via `ldconfig -p` before running. All 8 steps passed; test result: `All tests passed!` (exit code 0). Per-step evidence from the actual run:
 
 1. **DB file created** — `DB path: /tmp/feedback_verify_GHHFAD/FeedbackSystem/feedback.db`, `File exists on disk: true`.
