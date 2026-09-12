@@ -1,8 +1,15 @@
 # Progress Log
 
-IN PROGRESS: FIX-03 production-readiness pass (10 items, priority order: §3, §6-contradiction, §9, §8, §1, §2, §4, §5, §6-rest, §7, §10).
+DONE: FIX-03 production-readiness pass — all 10 items complete (priority order: §3, §6-contradiction, §9, §8, §1, §2, §4, §5, §6-rest, §7, §10). See the dated FIX-03 entries above for each item's detail.
 
-IN PROGRESS: §10 release. Extended the §3 keyboard-open test loop from 4 phone sizes to all 8 SPEC-RESPONSIVE.md §9 sizes (added the 4 tablet sizes) per FIX-03 §10's explicit "all 8 sizes... with the keyboard open" requirement. Also silenced two benign `tester.tap()` "didn't hit the widget" warnings in the §8 debounce tests (the second/third taps in those tests realistically land on the now-opening dialog rather than the button underneath — expected, not a bug — `warnIfMissed: false` documents why rather than leaving unexplained warning noise in a release-checklist test run). `flutter analyze`: clean. `flutter test test/widget_test.dart`: **83/83 pass, zero warnings.**
+DONE (§10 release):
+1. `flutter analyze` — clean, zero issues.
+2. Extended the §3 keyboard-open overflow test loop from 4 phone sizes to all 8 SPEC-RESPONSIVE.md §9 sizes (added the 4 tablet sizes), per §10's explicit "all 8 sizes... with the keyboard open" requirement. Silenced two benign `tester.tap()` "didn't hit the widget" warnings in the §8 debounce tests (the later taps in those tests realistically land on the now-opening dialog rather than the button underneath — expected, not a bug — `warnIfMissed: false` documents why). `flutter test test/widget_test.dart`: **83/83 pass, zero warnings.** `flutter test tool/verify_sync_test.dart`: **4/4 real tests pass** (8-step sync pipeline, CrashLog rolling file, DB open-race, 7-day retention).
+3. All 8 sizes, portrait and landscape, with the keyboard open on the comment field — covered by the extended loop above; all pass, no overflow, Submit reachable at every one.
+4. Built the signed release APK: `flutter build apk --release` (Gradle `assembleRelease`, 69.8s) → `build/app/outputs/flutter-apk/app-release.apk`, copied to the project root as `feedback.apk`.
+5. Confirmed the APK's mtime is newer than every source file: `find lib pubspec.yaml android/app/src -type f -newer feedback.apk` returns **nothing** — no source file postdates the build. `apksigner verify --print-certs` confirms it's signed with the real release key (`CN=Feedback Machine, OU=Code Station 23`), not debug.
+6. Confirmed the icon via `aapt dump badging`: `application-icon` still resolves to `res/BW.xml`, the same adaptive-icon XML confirmed earlier this session — unaffected by this pass, as expected (nothing in FIX-03 touched the icon).
+7. **Path:** `/home/sajibghosh/soft/feedback-flutter/feedback.apk`. **Size:** 57,136,372 bytes (57.1MB). **Change from the last build:** +16,384 bytes (+16.0KB) — a small, expected net change given this pass added a new service (`crash_log.dart`) and new UI (the English sub-label, the helper text) while removing the debug-dump UI and the old `debug_log.dart`.
 
 DONE (10/10 — §7 stability audit): Found and fixed two real, previously-unnoticed bugs, confirmed the rest already correct.
 **Database**
