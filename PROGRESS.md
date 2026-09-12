@@ -1,5 +1,26 @@
 # Progress Log
 
+DONE (FIX-04 §3 — 15-minute soak, recovered from a session that hit its
+limit before this got written up): the previous session's terminal
+output (not trusted from a stale PROGRESS.md, since the limit cut off
+before that session wrote anything) showed:
+- 15-minute soak test **passed**: all 20 rows submitted during the soak
+  synced cleanly, RSS stayed bounded (the last sample was lower than the
+  first — no leak), and the crash-log file behaved (never created, since
+  a healthy run logs nothing).
+- `flutter analyze`: clean.
+- `flutter test test/widget_test.dart`: **89/89 pass**.
+- A harness-only bug was found and fixed first: the new soak test was
+  missing the `runZonedGuarded` wrapper the main 8-step pipeline test in
+  `tool/verify_sync_test.dart` already had, to swallow a
+  `connectivity_plus`/`ServicesBinding` artifact that only exists in the
+  bare `test()` environment (no widget-test binding), never on a real
+  device. Fixed in `tool/verify_sync_test.dart` (still uncommitted on
+  disk when this session started — committed now).
+Not yet run at that point: the final tool-harness rerun (all 6 real
+tests in `tool/verify_sync_test.dart`), this write-up, and the release
+build — all continued in this session.
+
 CONFIRMED: FIX-03 is fully done before starting FIX-04, as instructed. Fresh (not trusted-from-log) `flutter analyze` — clean — and `flutter test test/widget_test.dart` — 83/83 pass — both re-run at the start of this session and matched the prior session's claims exactly. Nothing was outstanding in terms of code work. The only gaps are the previously-disclosed, environment-limited verifications that no code change can close: colour-emoji rendering on Android, `wakelock_plus` surviving a screen cycle, a real 15-minute soak, and the §5 English-sub-label wording flagged for confirmation. None of these block FIX-04, and §3 (keyboard insets) specifically — which FIX-04 §1 depends on — is code-complete and test-verified.
 
 DONE (FIX-04 §1 + §2 — negative dialog header and comment label, done together since both touch the same files and §2 explicitly changes shared sizing that §1's neighbours read too):

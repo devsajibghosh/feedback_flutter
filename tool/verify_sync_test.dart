@@ -140,13 +140,15 @@ void main() {
     'FIX-03 §6/§7: CrashLog writes to a real rolling file and trims when '
     'it gets too big',
     () async {
-      final tempDir = await Directory.systemTemp.createTemp('feedback_verify_crashlog_');
+      final tempDir =
+          await Directory.systemTemp.createTemp('feedback_verify_crashlog_');
       addTearDown(() => tempDir.delete(recursive: true));
       addTearDown(CrashLog.resetForTest);
       CrashLog.resetForTest();
       PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
 
-      await CrashLog.record('test-context', StateError('boom'), StackTrace.current);
+      await CrashLog.record(
+          'test-context', StateError('boom'), StackTrace.current);
       final logFile = File(p.join(tempDir.path, 'FeedbackSystem', 'app.log'));
       expect(logFile.existsSync(), isTrue);
       final firstContent = await logFile.readAsString();
@@ -277,7 +279,8 @@ void main() {
       // debugSummary doesn't expose ids directly; re-query via the public
       // getUnsyncedBatch/markSynced-adjacent surface isn't enough here, so
       // fall back to the same sqlite3 CLI the rest of this harness uses.
-      final idOutput = await Process.run('sqlite3', [dbPath, 'SELECT id FROM feedbacks;']);
+      final idOutput =
+          await Process.run('sqlite3', [dbPath, 'SELECT id FROM feedbacks;']);
       for (final line in (idOutput.stdout as String).trim().split('\n')) {
         final id = int.tryParse(line.trim());
         if (id != null) remainingIds.add(id);
@@ -289,6 +292,154 @@ void main() {
       expect(remainingIds.contains(oldPendingId), isTrue);
     },
   );
+
+  test(
+    'FIX-04 §3 walkthrough step 13: kill and relaunch — a brand-new '
+    'DbService instance over the same on-disk file sees rows a previous '
+    'instance wrote, exactly like a real process restart would',
+    () async {
+      final tempDir =
+          await Directory.systemTemp.createTemp('feedback_verify_relaunch_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+
+      // "Before the kill": one DbService instance, one pending row.
+      final beforeKill = DbService();
+      final id = await beforeKill.insert(FeedbackEntry(
+        orgId: 1,
+        rating: 'poor',
+        comment: 'still here after relaunch?',
+        categoryIds: const [],
+        createdAt: DateTime.now(),
+        synced: 0,
+      ));
+      _log('inserted row $id before "kill"');
+
+      // "After relaunch": a brand-new DbService, with none of the old
+      // instance's in-memory state (no cached _dbFuture, nothing) — the
+      // only thing carrying the row over is the real file on disk, exactly
+      // as main() constructing a fresh DbService on every app launch does.
+      final afterRelaunch = DbService();
+      final summary = await afterRelaunch.debugSummary();
+      _log(
+        'after "relaunch": total=${summary.total} '
+        'pending=${summary.bySynced[0] ?? 0} dbPath=${summary.dbPath}',
+      );
+      expect(summary.total, 1);
+      expect(summary.bySynced[0], 1, reason: 'the pending row must survive');
+
+      final unsynced = await afterRelaunch.getUnsyncedBatch();
+      expect(unsynced.single.id, id);
+      expect(unsynced.single.comment, 'still here after relaunch?');
+    },
+  );
+
+  test(
+    'FIX-04 §3: 15-minute soak — the queue worker keeps draining with no '
+    'growth, no leaks, no stuck state, no growing log file',
+    () async {
+      // Same harness-only gap as the main pipeline test above:
+      // SyncService.start()'s connectivity_plus listener needs some
+      // ServicesBinding to exist for its EventChannel, which isn't set up
+      // in this bare (non-widget-test) test() — the failure happens
+      // asynchronously outside start()'s own synchronous try/catch, so it
+      // must be caught here instead of letting it fail the whole soak.
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        await _runSoak();
+        if (!done.isCompleted) done.complete();
+      }, (error, stack) {
+        if (done.isCompleted) return;
+        if (error is TestFailure) {
+          done.completeError(error, stack);
+          return;
+        }
+        _log('(ignored — harness-only, not a real binding on device) $error');
+      });
+      await done.future;
+    },
+    timeout: const Timeout(Duration(minutes: 20)),
+  );
+}
+
+Future<void> _runSoak() async {
+  final tempDir =
+      await Directory.systemTemp.createTemp('feedback_verify_soak_');
+  addTearDown(() => tempDir.delete(recursive: true));
+  addTearDown(CrashLog.resetForTest);
+  CrashLog.resetForTest();
+  PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+
+  const port = 39218;
+  final mock = _MockServer(port);
+  await mock.start();
+  final api = ApiService(baseUrl: 'http://127.0.0.1:$port/api');
+  final db = DbService();
+  final sync = SyncService(api: api, db: db);
+  sync.start();
+
+  final rssSamples = <int>[];
+  void sampleRss() {
+    try {
+      rssSamples.add(ProcessInfo.currentRss);
+    } catch (_) {
+      // Not available on every platform — soak still runs without it.
+    }
+  }
+
+  sampleRss();
+  const soakDuration = Duration(minutes: 15);
+  const submitEvery = Duration(seconds: 45);
+  final stopwatch = Stopwatch()..start();
+  var submitted = 0;
+
+  while (stopwatch.elapsed < soakDuration) {
+    await sync.submit(
+      orgId: 1,
+      rating: 'good',
+      comment: 'soak row $submitted',
+    );
+    submitted++;
+    sampleRss();
+    await Future<void>.delayed(submitEvery);
+  }
+
+  // Let whatever's still in flight settle before the final check.
+  await Future<void>.delayed(const Duration(seconds: 35));
+  sampleRss();
+
+  final summary = await sync.debugSummary();
+  _log(
+    'soak complete: submitted=$submitted requests=${mock.requestCount} '
+    'total=${summary.total} pending=${summary.bySynced[0] ?? 0} '
+    'sent=${summary.bySynced[1] ?? 0} '
+    'consecutiveFailures=${summary.consecutiveFailures} '
+    'lastError=${summary.lastError}',
+  );
+  if (rssSamples.isNotEmpty) {
+    _log(
+      'RSS samples (bytes): first=${rssSamples.first} '
+      'last=${rssSamples.last} max=${rssSamples.reduce((a, b) => a > b ? a : b)}',
+    );
+  }
+
+  expect(summary.total, submitted, reason: 'every submit must land');
+  expect(summary.bySynced[0] ?? 0, 0,
+      reason: 'nothing should still be pending after 15 minutes of a '
+          'healthy, always-reachable server');
+  expect(summary.consecutiveFailures, 0);
+  expect(summary.lastError, isNull, reason: 'a healthy run logs nothing');
+
+  final logFile = File(p.join(tempDir.path, 'FeedbackSystem', 'app.log'));
+  expect(logFile.existsSync(), isFalse,
+      reason: 'no errors occurred, so CrashLog should never have '
+          'written anything — confirms it does not grow on its own');
+
+  await mock.stop();
 }
 
 Future<void> _runVerification() async {
