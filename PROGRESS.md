@@ -1,5 +1,20 @@
 # Progress Log
 
+DONE (FIX-06 §3 — enlarge `কেন সন্তুষ্ট হন নি?`): The secondary line under
+the rating name in the negative dialog header was already its own sized
+getter, `Responsive.negativeHeadQuestionSize` (`lib/theme/responsive.dart`),
+consumed at exactly one call site (`lib/widgets/negative_dialog.dart:274`)
+which was already `inkMuted`/weight 400 as a secondary line under the
+primary rating-name line (FIX-05 §1) — so this was a pure size change,
+nothing else needed touching. Bumped 15/14/13 → 22/19/17
+(expanded/medium/compact) exactly per the table. Confirmed the header
+still collapses correctly with the keyboard open at the new size: the
+existing FIX-04 §1 collapse test (simulated `viewInsets`, no real device
+available) is unaffected by a font-size-only change and still passes.
+`flutter analyze`: clean. `flutter test test/widget_test.dart`: **95/95
+pass**, unchanged count (no test asserted the literal pixel size, only
+text presence).
+
 DONE (FIX-06 §1 + §5 — negative drains in full, positive one at a time, 30s
 tick — done together since both live in `SyncService._drain()` and §5
 explicitly retires the throttle §1's batching rule replaces):

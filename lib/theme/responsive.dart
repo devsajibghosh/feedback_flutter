@@ -208,10 +208,12 @@ class Responsive {
   double get negativeHeadRatingNameSize =>
       isExpanded ? 30.0 : (isMedium ? 26.0 : 24.0);
 
-  /// FIX-05 §1: `কেন সন্তুষ্ট হন নি?`, demoted to a secondary line under the
-  /// rating name — same sizes the old subtitle used.
+  /// FIX-06 §3: `কেন সন্তুষ্ট হন নি?`, a secondary line under the rating
+  /// name (still `inkMuted`, weight 400, so the rating name above it reads
+  /// as primary) — enlarged from the original 15/14/13, too small on
+  /// device.
   double get negativeHeadQuestionSize =>
-      isExpanded ? 15.0 : (isMedium ? 14.0 : 13.0);
+      isExpanded ? 22.0 : (isMedium ? 19.0 : 17.0);
 
   // ── Comment label (FIX-04 §2) — a prompt now, not a caption ──────────
   double get commentLabelSize => isExpanded ? 18.0 : (isMedium ? 16.0 : 15.0);
