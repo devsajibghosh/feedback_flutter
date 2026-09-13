@@ -1,5 +1,54 @@
 # Progress Log
 
+DONE (FIX-06 §2 — true kiosk mode: auto-pin on launch, auto-start on boot):
+**Checked what already existed first, as instructed, before adding
+anything.** SPEC.md §4.9 had already been substantially built:
+`lib/services/kiosk_service.dart` already calls a `startLockTask()`-backed
+method channel on every app launch (from `main.dart`, before `runApp`),
+`MainActivity.kt` already checks `isDeviceOwnerApp` and calls
+`setLockTaskPackages` in the device-owner path before calling
+`startLockTask()` unconditionally otherwise (both wrapped in try/catch),
+`FeedbackDeviceAdminReceiver.kt` + `res/xml/device_admin.xml` already
+register a valid device-admin component for that call, and
+`BootReceiver.kt` + the manifest already register a `BOOT_COMPLETED`
+receiver that launches `MainActivity`, with `RECEIVE_BOOT_COMPLETED`
+already declared. All of that reused as-is, unchanged.
+
+**What was actually missing, found by diffing against this fix's exact
+checklist:**
+1. `android:lockTaskMode="if_whitelisted"` was not on the activity in
+   `AndroidManifest.xml` — added. Without it, `startLockTask()` in the
+   device-owner path has no whitelisted-mode activity to lock into.
+2. `QUICKBOOT_POWERON` was not handled anywhere — added both the standard
+   `android.intent.action.QUICKBOOT_POWERON` and the older
+   `com.htc.intent.action.QUICKBOOT_POWERON` variant to the receiver's
+   intent-filter in the manifest, and to `BootReceiver.onReceive`'s action
+   check.
+3. `BootReceiver` had no retry at all — a single unguarded `startActivity`
+   call with nothing catching a failure. Rewrote it to retry up to 5 times,
+   3 seconds apart, on a `Handler` if `startActivity` throws (package
+   manager/storage not yet settled this early in boot is a realistic
+   failure window) — it now genuinely does not give up silently on the
+   first attempt as the instruction asked.
+4. `KIOSK-SETUP.md` did not exist — added at the project root: the exact
+   `adb` commands to install the APK and run
+   `dpm set-device-owner com.codestation23.feedback/.FeedbackDeviceAdminReceiver`,
+   the explicit factory-reset caveat (device owner cannot be set over any
+   existing account — this is a platform restriction, not something the
+   app can route around), how to verify it worked, and how to remove
+   device-owner status later.
+
+**Verification:** `flutter analyze` clean; `./gradlew :app:compileDebugKotlin`
+run directly (the only way to validate Kotlin/manifest changes without a
+device) — **BUILD SUCCESSFUL**, confirming both the new `BootReceiver.kt`
+compiles and the manifest (including the new `lockTaskMode` attribute and
+the two new intent-filter actions) merges without error.
+**Could not verify, exactly as flagged in advance:** the device-owner and
+boot-receiver behavior itself needs real hardware — no Android
+device/emulator is available in this environment (unchanged all project).
+Nothing here should be read as "confirmed working on a kiosk," only "code
+compiles and the manifest is well-formed."
+
 DONE (FIX-06 §4 — success/error/warning cards scale with the device): Added
 six new `Responsive` getters (`lib/theme/responsive.dart`) matching the two
 tables exactly — `alertMaxWidth` (520/440/`width - 48`, clamped with a

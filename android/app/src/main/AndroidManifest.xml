@@ -21,6 +21,7 @@
             android:screenOrientation="fullSensor"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
+            android:lockTaskMode="if_whitelisted"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
@@ -36,12 +37,17 @@
             </intent-filter>
         </activity>
 
-        <!-- Relaunches the app after a reboot (§4.9). -->
+        <!-- Relaunches the app after a reboot (FIX-06 §2, originally §4.9).
+             QUICKBOOT_POWERON is a non-standard action some OEM builds
+             (notably older HTC/Samsung/Amazon firmware) broadcast instead of
+             (or in addition to) BOOT_COMPLETED. -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
