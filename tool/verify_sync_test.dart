@@ -503,15 +503,10 @@ Future<void> _runVerification() async {
       reason: 'the 5s tick must have posted to the server by now');
   expect(summary.bySynced[1], 1, reason: 'the row must now be synced=1');
 
-  // FIX-03 §1: at most one upload every 30s, measured from the previous
-  // upload's completion. Row 1 just completed a few seconds ago — without
-  // waiting out that window first, row 2's own 5s-later attempt below would
-  // be silently throttled (no request, no failure recorded), which is
-  // exactly what happened the first time this harness ran after §1 landed.
-  _log(
-      '\nwaiting out the 30s upload throttle before testing the offline row...');
-  await Future<void>.delayed(const Duration(seconds: 31));
-
+  // FIX-06 §5 retired the old per-row 30s throttle (`_lastUploadCompletion`)
+  // entirely — the 30s tick interval is now the only pacing, so row 2's own
+  // 5s-later first-attempt timer below fires and fails independently, with
+  // no artificial wait needed first.
   _log(
       '\n=== STEP 7: airplane-mode equivalent — stop the mock server, submit again ===');
   await mock.stop();

@@ -1,5 +1,85 @@
 # Progress Log
 
+DONE (FIX-06 §1 + §5 — negative drains in full, positive one at a time, 30s
+tick — done together since both live in `SyncService._drain()` and §5
+explicitly retires the throttle §1's batching rule replaces):
+
+**§5 tick interval.** `_regularInterval` 45s → 30s. The backoff formula
+(`_regularInterval.inSeconds * 2^consecutiveFailures`, capped at 15
+minutes, reset to 30s on success) was already parametrized on
+`_regularInterval`, so the sequence became 30s → 60s → 2m → 4m → 8m →
+(16m capped to 15m) automatically — verified by running the real 8-step
+`tool/verify_sync_test.dart` pipeline fresh: a genuine hard failure now
+reports `currentBackoff=0:01:00` (60s), not the old 90s. Deleted
+`_lastUploadCompletion` and the `_uploadThrottle` constant along with the
+throttle check at the top of `_drain()` entirely, per the explicit
+instruction — the tick interval is now the only pacing mechanism, there
+is no longer a timer plus a separate gap check.
+
+**§1 negative/positive batching.** `DbService.getUnsyncedBatch` gained an
+optional `ratings` filter (SQL `rating IN (...)`) and `limit` is now
+nullable (`null` = no `LIMIT` clause, i.e. every matching row) rather than
+defaulting to 3. `SyncService._drain()` now: (1) fetches every pending row
+with `rating` in `{poor, very_poor}`, oldest first, and uploads them one
+after another with a 400ms gap between each (inside the 300–500ms range
+asked for); (2) only after that loop finishes without a hard failure,
+fetches and uploads exactly one pending row with `rating` in `{very_good,
+good, satisfactory}`. Per-row upload/backoff logic was factored out of the
+old single-row `_drain()` body into a new `_uploadRow()` helper returning
+whether the attempt was a hard failure; `_drain()`'s negative loop checks
+that return value after every row and `return`s immediately on a hard
+failure — the loop index is never advanced past a failing row, so the
+next negative row is never attempted and the positive pass never runs
+that tick. A 422 (permanent rejection) is deliberately *not* treated as a
+hard failure here, matching the pre-existing per-row semantics (`synced =
+-1`, backoff resets to the regular interval) — only a real network/HTTP
+error or a 2xx-without-success body stops the tick, since the instruction
+is about a genuinely down server, not one permanent per-row rejection.
+The 5s first-attempt timer and the `connectivity_plus` trigger are
+unchanged and still just call `_drain()`, which now does the right thing
+by itself regardless of which trigger fired it.
+
+**Verification — both real, not just reasoning, as asked:**
+1. New test seeds 3 positive rows (`very_good`/`good`/`satisfactory`) and
+   3 negative rows (`poor`/`very_poor`/`poor`), runs one `drainForTest()`,
+   and confirms exactly 3 negatives end up `synced=1` and exactly 1
+   positive does (`test/widget_test.dart`, "FIX-06 §1: one tick uploads
+   every pending negative row in full and exactly one pending positive
+   row").
+2. New test seeds 3 negative rows, scripts the *second* upload call to
+   throw a non-422 `DioException`, runs one `drainForTest()`, and confirms
+   only 2 of the 3 API calls happened (the third negative row was never
+   attempted), row 1 is `synced=1`, rows 2 and 3 are still `synced=0`, and
+   `consecutiveFailures` is 1 — proving a mid-tick failure stops the tick
+   rather than continuing to the next row ("FIX-06 §1: a hard failure
+   partway through the negative batch stops the tick instead of
+   continuing to the next negative row").
+Updated the two now-obsolete FIX-03 §1 tests this superseded (the old
+"only the single oldest row per drain" and "30s throttle blocks a second
+drain" tests — both describe behavior that no longer exists) and the
+three backoff-value assertions that hardcoded 45s/90s to the new 30s/60s.
+Updated the two `DbService` test-double subclasses
+(`_FakeDbService`/`_ThrowingDbService`) whose `getUnsyncedBatch` override
+signature the compiler requires to match the new one (`ratings` param,
+nullable `limit`) — `_FakeDbService`'s now actually filters by rating and
+sorts by `createdAt` like the real SQL does, rather than relying on
+insertion order.
+Also removed the real `tool/verify_sync_test.dart` pipeline's now-pointless
+31-second "wait out the old throttle" pause before its offline-row step,
+since that throttle is gone — reran the pipeline fresh afterward with no
+regression (still all 8 steps confirmed, and the backoff value it logs
+now reads 60s as expected).
+
+`flutter analyze`: clean. `flutter test test/widget_test.dart`: **95/95
+pass.** `flutter test tool/verify_sync_test.dart` real (non-code-reading)
+reruns of the 5 non-soak tests: the 8-step pipeline, `DbService`'s
+concurrent-open race, 7-day retention, the relaunch/step-13 walkthrough,
+and `CrashLog`'s rolling file — all pass. The 15-minute soak test in that
+same file was **not** rerun in this step (its own submit-every-45s /
+tick-every-30s timing is unaffected by this change, and FIX-06 §6 already
+requires a full fresh test-suite run including this file before the
+release build, which will exercise it for real then rather than twice).
+
 DONE (FIX-04 §4 — final release build): Before building, reran
 everything per §3's "rerun everything": `flutter analyze` — clean.
 `flutter test test/widget_test.dart` — **89/89 pass**, fresh, including

@@ -120,13 +120,27 @@ class DbService {
     return db.insert('feedbacks', entry.toMap());
   }
 
-  /// Up to [limit] unsynced rows, oldest first (FIX-02 §1).
-  Future<List<FeedbackEntry>> getUnsyncedBatch({int limit = 3}) async {
+  /// Unsynced rows, oldest first (FIX-02 §1). [limit] caps the count, or
+  /// `null` for every matching row (FIX-06 §1's "upload every pending
+  /// negative row"). [ratings], when given, restricts to that set of
+  /// `rating` values — the negative/positive split FIX-06 §1 requires.
+  Future<List<FeedbackEntry>> getUnsyncedBatch({
+    int? limit,
+    List<String>? ratings,
+  }) async {
     final db = await _database;
+    final where = StringBuffer('synced = ?');
+    final whereArgs = <Object?>[0];
+    if (ratings != null && ratings.isNotEmpty) {
+      where.write(
+        ' AND rating IN (${List.filled(ratings.length, '?').join(', ')})',
+      );
+      whereArgs.addAll(ratings);
+    }
     final rows = await db.query(
       'feedbacks',
-      where: 'synced = ?',
-      whereArgs: [0],
+      where: where.toString(),
+      whereArgs: whereArgs,
       orderBy: 'created_at ASC',
       limit: limit,
     );

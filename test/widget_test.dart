@@ -86,8 +86,17 @@ class _FakeDbService extends DbService {
   }
 
   @override
-  Future<List<FeedbackEntry>> getUnsyncedBatch({int limit = 3}) async {
-    return rows.where((r) => r.synced == 0).take(limit).toList();
+  Future<List<FeedbackEntry>> getUnsyncedBatch({
+    int? limit,
+    List<String>? ratings,
+  }) async {
+    var pending = rows.where((r) => r.synced == 0);
+    if (ratings != null && ratings.isNotEmpty) {
+      pending = pending.where((r) => ratings.contains(r.rating));
+    }
+    final sorted = pending.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return limit == null ? sorted : sorted.take(limit).toList();
   }
 
   @override
@@ -519,8 +528,65 @@ void main() {
     );
 
     test(
-      'FIX-03 §1: drainForTest() uploads only the single oldest pending row, '
-      'even with several queued',
+      'FIX-06 §1: one tick uploads every pending negative row in full and '
+      'exactly one pending positive row',
+      () async {
+        final positiveRatings = ['very_good', 'good', 'satisfactory'];
+        final negativeRatings = ['poor', 'very_poor', 'poor'];
+        final db = _FakeDbService()
+          ..rows.addAll([
+            for (var i = 0; i < positiveRatings.length; i++)
+              FeedbackEntry(
+                id: i + 1,
+                orgId: 7,
+                rating: positiveRatings[i],
+                comment: 'positive ${positiveRatings[i]}',
+                categoryIds: const [],
+                createdAt: DateTime(2024, 1, 1, 12, i),
+                synced: 0,
+              ),
+            for (var i = 0; i < negativeRatings.length; i++)
+              FeedbackEntry(
+                id: positiveRatings.length + i + 1,
+                orgId: 7,
+                rating: negativeRatings[i],
+                comment: 'negative ${negativeRatings[i]}',
+                categoryIds: const [],
+                createdAt: DateTime(2024, 1, 1, 13, i),
+                synced: 0,
+              ),
+          ]);
+        var calls = 0;
+        final api = _ScriptedApiService()
+          ..onSubmit = () async {
+            calls++;
+            return const SubmitSuccess('ok');
+          };
+        final sync = SyncService(api: api, db: db);
+
+        await sync.drainForTest();
+
+        final negativeSynced =
+            db.rows.where((r) => r.rating == 'poor' || r.rating == 'very_poor')
+                .where((r) => r.synced == 1);
+        final positiveSynced = db.rows
+            .where(
+              (r) =>
+                  r.rating == 'very_good' ||
+                  r.rating == 'good' ||
+                  r.rating == 'satisfactory',
+            )
+            .where((r) => r.synced == 1);
+
+        expect(negativeSynced.length, 3, reason: 'all three negatives');
+        expect(positiveSynced.length, 1, reason: 'exactly one positive');
+        expect(calls, 4);
+      },
+    );
+
+    test(
+      'FIX-06 §1: a hard failure partway through the negative batch stops '
+      'the tick instead of continuing to the next negative row',
       () async {
         final db = _FakeDbService()
           ..rows.addAll([
@@ -536,8 +602,8 @@ void main() {
             FeedbackEntry(
               id: 2,
               orgId: 7,
-              rating: 'poor',
-              comment: 'second',
+              rating: 'very_poor',
+              comment: 'second — fails',
               categoryIds: const [],
               createdAt: DateTime(2024, 1, 2),
               synced: 0,
@@ -546,7 +612,7 @@ void main() {
               id: 3,
               orgId: 7,
               rating: 'poor',
-              comment: 'third',
+              comment: 'third — must not be attempted',
               categoryIds: const [],
               createdAt: DateTime(2024, 1, 3),
               synced: 0,
@@ -556,61 +622,23 @@ void main() {
         final api = _ScriptedApiService()
           ..onSubmit = () async {
             calls++;
+            if (calls == 2) {
+              throw DioException(
+                requestOptions: RequestOptions(path: '/feedback/store'),
+              );
+            }
             return const SubmitSuccess('ok');
           };
         final sync = SyncService(api: api, db: db);
 
         await sync.drainForTest();
 
-        expect(calls, 1);
+        expect(calls, 2, reason: 'the third row must never be attempted');
         expect(db.rows.firstWhere((r) => r.id == 1).synced, 1);
         expect(db.rows.firstWhere((r) => r.id == 2).synced, 0);
         expect(db.rows.firstWhere((r) => r.id == 3).synced, 0);
-      },
-    );
-
-    test(
-      'FIX-03 §1: the 30s upload throttle blocks a second drain immediately '
-      'after the first, even with a row still pending',
-      () async {
-        final db = _FakeDbService()
-          ..rows.addAll([
-            FeedbackEntry(
-              id: 1,
-              orgId: 7,
-              rating: 'poor',
-              comment: 'first',
-              categoryIds: const [],
-              createdAt: DateTime(2024, 1, 1),
-              synced: 0,
-            ),
-            FeedbackEntry(
-              id: 2,
-              orgId: 7,
-              rating: 'poor',
-              comment: 'second',
-              categoryIds: const [],
-              createdAt: DateTime(2024, 1, 2),
-              synced: 0,
-            ),
-          ]);
-        var calls = 0;
-        final api = _ScriptedApiService()
-          ..onSubmit = () async {
-            calls++;
-            return const SubmitSuccess('ok');
-          };
-        final sync = SyncService(api: api, db: db);
-
-        await sync.drainForTest();
-        expect(calls, 1);
-
-        // Immediately again — well within the 30s throttle window. This is
-        // the "5s first-attempt timer and the 30s throttle disagree" case;
-        // the throttle must win.
-        await sync.drainForTest();
-        expect(calls, 1);
-        expect(db.rows.firstWhere((r) => r.id == 2).synced, 0);
+        final summary = await sync.debugSummary();
+        expect(summary.consecutiveFailures, 1);
       },
     );
 
@@ -644,7 +672,7 @@ void main() {
         expect(db.rows.single.synced, -1);
         final summary = await sync.debugSummary();
         expect(summary.consecutiveFailures, 0);
-        expect(summary.currentBackoff, const Duration(seconds: 45));
+        expect(summary.currentBackoff, const Duration(seconds: 30));
       },
     );
 
@@ -675,7 +703,7 @@ void main() {
         expect(db.rows.single.synced, 0);
         final summary = await sync.debugSummary();
         expect(summary.consecutiveFailures, 1);
-        expect(summary.currentBackoff, const Duration(seconds: 90));
+        expect(summary.currentBackoff, const Duration(seconds: 60));
       },
     );
 
@@ -688,7 +716,7 @@ void main() {
     });
 
     test(
-      'a successful drain resets the backoff back to the regular 45s interval',
+      'a successful drain resets the backoff back to the regular 30s interval',
       () async {
         final db = _FakeDbService()
           ..rows.add(
@@ -711,7 +739,7 @@ void main() {
         expect(db.rows.single.synced, 1);
         final summary = await sync.debugSummary();
         expect(summary.consecutiveFailures, 0);
-        expect(summary.currentBackoff, const Duration(seconds: 45));
+        expect(summary.currentBackoff, const Duration(seconds: 30));
         expect(summary.lastSuccessfulSync, isNotNull);
       },
     );
@@ -2264,7 +2292,10 @@ void main() {
 /// tick can never crash the app (§4.8).
 class _ThrowingDbService extends DbService {
   @override
-  Future<List<FeedbackEntry>> getUnsyncedBatch({int limit = 5}) async {
+  Future<List<FeedbackEntry>> getUnsyncedBatch({
+    int? limit,
+    List<String>? ratings,
+  }) async {
     throw Exception('disk is on fire');
   }
 }
