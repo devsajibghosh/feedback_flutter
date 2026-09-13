@@ -1,10 +1,102 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/responsive.dart';
 import '../theme/tokens.dart';
 
+/// The shared card shape behind [showErrorAlert] and [showWarningAlert]
+/// (FIX-06 §4): sized from [Responsive] exactly like the success toast, so
+/// all three alerts read as one family instead of the success toast being
+/// the only one that scales with the device.
+class _AlertCard extends StatelessWidget {
+  const _AlertCard({
+    required this.icon,
+    required this.iconColor,
+    this.title,
+    required this.message,
+    required this.confirmLabel,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String? title;
+  final String message;
+  final String confirmLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final responsive = Responsive.of(context);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Material(
+        color: AppTokens.ivory,
+        borderRadius: BorderRadius.circular(responsive.alertRadius),
+        child: Container(
+          constraints: BoxConstraints(maxWidth: responsive.alertMaxWidth),
+          padding: EdgeInsets.all(responsive.alertPadding),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: iconColor, size: responsive.alertIconSize),
+              const SizedBox(height: 14),
+              if (title != null) ...[
+                Text(
+                  title!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: AppTheme.headingFontFamily,
+                    fontFamilyFallback: AppTheme.bengaliFallback,
+                    fontWeight: FontWeight.w700,
+                    fontSize: responsive.alertTitleSize,
+                    color: AppTokens.ink,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: AppTheme.bodyFontFamily,
+                  fontFamilyFallback: AppTheme.bengaliFallback,
+                  fontSize: responsive.alertBodySize,
+                  color: AppTokens.inkMid,
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextButton(
+                style: TextButton.styleFrom(
+                  backgroundColor: AppTokens.verdant,
+                  foregroundColor: AppTokens.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                  ),
+                ),
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  confirmLabel,
+                  style: const TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontFamilyFallback: AppTheme.bengaliFallback,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Recreates the SweetAlert2 dialogs from the Electron app (§3.5): same
-/// icon, title, body, and button, styled with `ivory` / `ink` / radius 20.
+/// icon, title, body, and button, styled with `ivory` / `ink`, now sized
+/// from [Responsive] (FIX-06 §4) instead of a fixed radius/font set.
 ///
 /// The Electron source calls `Swal.fire(title, message, 'error')` for submit
 /// failures without a custom `confirmButtonText`, so SweetAlert2's own
@@ -19,56 +111,12 @@ Future<void> showErrorAlert(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: AppTokens.ivory,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTokens.radiusLg),
-      ),
-      icon: const Icon(Icons.error, color: AppTokens.error, size: 46),
-      title: Text(
-        title,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontFamily: AppTheme.headingFontFamily,
-          fontFamilyFallback: AppTheme.bengaliFallback,
-          fontWeight: FontWeight.w700,
-          fontSize: 20,
-          color: AppTokens.ink,
-        ),
-      ),
-      content: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontFamily: AppTheme.bodyFontFamily,
-          fontFamilyFallback: AppTheme.bengaliFallback,
-          fontSize: 14,
-          color: AppTokens.inkMid,
-        ),
-      ),
-      actionsAlignment: MainAxisAlignment.center,
-      actions: [
-        TextButton(
-          style: TextButton.styleFrom(
-            backgroundColor: AppTokens.verdant,
-            foregroundColor: AppTokens.white,
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTokens.radiusSm),
-            ),
-          ),
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            confirmLabel,
-            style: const TextStyle(
-              fontFamily: AppTheme.bodyFontFamily,
-              fontFamilyFallback: AppTheme.bengaliFallback,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ],
+    builder: (context) => _AlertCard(
+      icon: Icons.error,
+      iconColor: AppTokens.error,
+      title: title,
+      message: message,
+      confirmLabel: confirmLabel,
     ),
   );
 }
@@ -92,7 +140,9 @@ Future<void> showGenericErrorAlert(BuildContext context) {
 /// title) and the mic-permission-denied dialog (titled 'মাইক্রোফোন'). The
 /// Electron source calls the mic one via `Swal.fire({icon, title, text})`
 /// with no `confirmButtonText`, so — same as the error shorthand calls —
-/// SweetAlert2's real default there is "OK", not a Bengali label.
+/// SweetAlert2's real default there is "OK", not a Bengali label. Sized
+/// from [Responsive] via the same [_AlertCard] the error alert uses
+/// (FIX-06 §4), so the empty-feedback warning matches that family too.
 Future<void> showWarningAlert(
   BuildContext context, {
   required String message,
@@ -101,62 +151,12 @@ Future<void> showWarningAlert(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: AppTokens.ivory,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTokens.radiusLg),
-      ),
-      icon: const Icon(
-        Icons.warning_amber,
-        color: AppTokens.amber,
-        size: 46,
-      ),
-      title: title == null
-          ? null
-          : Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: AppTheme.headingFontFamily,
-                fontFamilyFallback: AppTheme.bengaliFallback,
-                fontWeight: FontWeight.w700,
-                fontSize: 20,
-                color: AppTokens.ink,
-              ),
-            ),
-      content: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontFamily: AppTheme.bodyFontFamily,
-          fontFamilyFallback: AppTheme.bengaliFallback,
-          fontSize: 14,
-          color: AppTokens.inkMid,
-        ),
-      ),
-      actionsAlignment: MainAxisAlignment.center,
-      actions: [
-        TextButton(
-          style: TextButton.styleFrom(
-            backgroundColor: AppTokens.verdant,
-            foregroundColor: AppTokens.white,
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTokens.radiusSm),
-            ),
-          ),
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            confirmLabel,
-            style: const TextStyle(
-              fontFamily: AppTheme.bodyFontFamily,
-              fontFamilyFallback: AppTheme.bengaliFallback,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ],
+    builder: (context) => _AlertCard(
+      icon: Icons.warning_amber,
+      iconColor: AppTokens.amber,
+      title: title,
+      message: message,
+      confirmLabel: confirmLabel,
     ),
   );
 }

@@ -506,27 +506,27 @@ class _SuccessToastState extends State<_SuccessToast> {
           color: AppTokens.ivory,
           elevation: 8,
           shadowColor: Colors.black.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+          borderRadius: BorderRadius.circular(responsive.alertRadius),
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 360),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+            constraints: BoxConstraints(maxWidth: responsive.alertMaxWidth),
+            padding: EdgeInsets.all(responsive.alertPadding),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.check_circle,
                   color: AppTokens.verdant,
-                  size: 46,
+                  size: responsive.alertIconSize,
                 ),
                 const SizedBox(height: 14),
-                const Text(
+                Text(
                   'ধন্যবাদ!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: AppTheme.headingFontFamily,
                     fontFamilyFallback: AppTheme.bengaliFallback,
                     fontWeight: FontWeight.w700,
-                    fontSize: 20,
+                    fontSize: responsive.alertTitleSize,
                     color: AppTokens.ink,
                   ),
                 ),
@@ -534,10 +534,10 @@ class _SuccessToastState extends State<_SuccessToast> {
                 Text(
                   widget.message,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: AppTheme.bodyFontFamily,
                     fontFamilyFallback: AppTheme.bengaliFallback,
-                    fontSize: 14,
+                    fontSize: responsive.alertBodySize,
                     color: AppTokens.inkMid,
                   ),
                 ),

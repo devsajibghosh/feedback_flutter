@@ -220,8 +220,24 @@ class Responsive {
   double get commentLabelOptionalSize =>
       isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
 
-  // ── Success toast countdown (FIX-05 §3) — quieter than the thank-you
-  // line above it.
+  // ── Alert cards (FIX-06 §4) — the success toast, the error alert, and
+  // the empty-feedback warning all share this one scale, so the three read
+  // as one family. Never wider than `screenWidth - 48` at any breakpoint,
+  // even though only the compact card is actually defined that way.
+  double get alertMaxWidth {
+    final capped = isExpanded ? 520.0 : (isMedium ? 440.0 : width - 48);
+    return capped < width - 48 ? capped : width - 48;
+  }
+
+  double get alertPadding => isExpanded ? 32.0 : (isMedium ? 26.0 : 20.0);
+  double get alertRadius => isExpanded ? 24.0 : (isMedium ? 22.0 : 20.0);
+
+  double get alertIconSize => isExpanded ? 64.0 : (isMedium ? 54.0 : 46.0);
+  double get alertTitleSize => isExpanded ? 28.0 : (isMedium ? 24.0 : 21.0);
+  double get alertBodySize => isExpanded ? 20.0 : (isMedium ? 17.0 : 15.0);
+
+  /// The success toast's countdown row (FIX-05 §3) — the quietest line in
+  /// the card, shared by the same alert-card scale above.
   double get successCountdownSize =>
-      isExpanded ? 13.0 : (isMedium ? 12.0 : 11.0);
+      isExpanded ? 16.0 : (isMedium ? 14.0 : 12.0);
 }

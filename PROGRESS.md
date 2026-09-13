@@ -1,5 +1,53 @@
 # Progress Log
 
+DONE (FIX-06 §4 — success/error/warning cards scale with the device): Added
+six new `Responsive` getters (`lib/theme/responsive.dart`) matching the two
+tables exactly — `alertMaxWidth` (520/440/`width - 48`, clamped with a
+`min` against `width - 48` universally so the "never wider than
+screenWidth - 48 at any breakpoint" rule holds even for the expanded/medium
+values, not just the compact one), `alertPadding` (32/26/20),
+`alertRadius` (24/22/20), `alertIconSize` (64/54/46), `alertTitleSize`
+(28/24/21), `alertBodySize` (20/17/15); `successCountdownSize` (the
+existing FIX-05 §3 getter) updated from 13/12/11 to the new 16/14/12.
+Wired the success toast (`_SuccessToast` in `feedback_screen.dart`) onto
+these directly — it already read `Responsive` for the countdown line, so
+this was a pure substitution of its previously-fixed 360/28/26/46/20/14
+values.
+The error alert and the empty-feedback warning were a bigger change:
+both were built directly on Flutter's `AlertDialog`, which doesn't expose
+a single "padding" or a card max-width the way the table asks for, so
+Flutter's own default alert padding/sizing was the actual "fixed size"
+problem, not just literal font-size constants. Extracted a new shared
+`_AlertCard` widget (`lib/widgets/app_alerts.dart`) — a plain `Dialog`
+wrapping a `Material` card built from the same six getters — and
+`showErrorAlert`/`showWarningAlert` (used by `showGenericErrorAlert`, the
+empty-feedback warning, and the mic-permission dialog, none of which
+otherwise changed) now both build one of these instead of an
+`AlertDialog`. This is also what login's own error alert uses, so it
+picked up the same responsive sizing automatically — consistent with "all
+three alerts feel like one family," since it's genuinely the same
+component now, not a fourth copy that happened to look similar.
+**Verification:** added 24 new tests (3 alerts × 8 sizes) to the existing
+`Responsive layout (SPEC-RESPONSIVE.md §9)` group — success toast (tap a
+positive rating, submit, confirm `ধন্যবাদ!` appears with no exception),
+error alert (a `PositiveDialogContent` wired to `_ThrowingSyncService`,
+confirm the generic message appears with no exception), and the
+empty-feedback warning (open the negative dialog, submit with nothing
+selected and no comment, confirm the warning text appears with no
+exception) — at all 8 SPEC-RESPONSIVE.md §9 sizes. Two real bugs in the
+first draft of these tests, not the app code, were found and fixed while
+writing them: (1) the submit button wasn't always on-screen at the
+smallest sizes without `tester.ensureVisible` first (the negative
+dialog's own submit-button tests already did this; the positive dialog's
+did not, so I added it to all three); (2) the success-toast test left the
+sync's 5s first-attempt timer and the toast's own 4s auto-dismiss timer
+pending at teardown, caught by the test framework's own
+`!timersPending` invariant — fixed by pumping 5 more seconds before the
+test ends, the same pattern the pre-existing success-toast test already
+used.
+`flutter analyze`: clean. `flutter test test/widget_test.dart`: **119/119
+pass** (95 + the 24 new ones).
+
 DONE (FIX-06 §3 — enlarge `কেন সন্তুষ্ট হন নি?`): The secondary line under
 the rating name in the negative dialog header was already its own sized
 getter, `Responsive.negativeHeadQuestionSize` (`lib/theme/responsive.dart`),

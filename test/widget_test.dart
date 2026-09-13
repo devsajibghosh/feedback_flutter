@@ -939,6 +939,126 @@ void main() {
       );
     }
 
+    // FIX-06 §4: the success toast, the error alert, and the empty-feedback
+    // warning all now size from Responsive — confirm none of the three
+    // overflows or clips at any of the 8 sizes.
+    for (final size in sizes) {
+      testWidgets(
+        'success toast: no overflow at ${size.width.toInt()}x${size.height.toInt()}',
+        (WidgetTester tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          SharedPreferences.setMockInitialValues({'org_id': 7});
+          final api = _FakeApiService();
+
+          await tester.pumpWidget(
+            MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          await tester.tap(find.byType(RatingButton).first); // very_good
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.ensureVisible(find.text('জমা দিন'));
+          await tester.pump();
+          await tester.tap(find.text('জমা দিন'));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.pump();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('ধন্যবাদ!'), findsOneWidget);
+
+          // Flush the sync's own 5s first-attempt timer and the toast's 4s
+          // auto-dismiss timer so neither is still pending at teardown.
+          await tester.pump(const Duration(seconds: 5));
+        },
+      );
+
+      testWidgets(
+        'error alert: no overflow at ${size.width.toInt()}x${size.height.toInt()}',
+        (WidgetTester tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => ElevatedButton(
+                    onPressed: () => showFeedbackDialog<SubmitResult>(
+                      context,
+                      isPositive: true,
+                      builder: (context, close) => PositiveDialogContent(
+                        orgId: 1,
+                        rating: 'very_good',
+                        close: close,
+                        sync: _ThrowingSyncService(),
+                      ),
+                    ),
+                    child: const Text('open'),
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          await tester.tap(find.text('open'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.ensureVisible(find.text('জমা দিন'));
+          await tester.pump();
+          await tester.tap(find.text('জমা দিন'));
+          await tester.pump();
+          await tester.pump();
+
+          expect(tester.takeException(), isNull);
+          expect(
+            find.text('দুঃখিত, একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।'),
+            findsOneWidget,
+          );
+        },
+      );
+
+      testWidgets(
+        'empty-feedback warning: no overflow at ${size.width.toInt()}x${size.height.toInt()}',
+        (WidgetTester tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          SharedPreferences.setMockInitialValues({'org_id': 7});
+          final api = _FakeApiService();
+
+          await tester.pumpWidget(
+            MaterialApp(home: AppRoot(api: api, sync: _fakeSync(api))),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          await tester.tap(find.byType(RatingButton).last); // very_poor
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.pump();
+
+          await tester.ensureVisible(find.text('ফিডব্যাক জমা দিন'));
+          await tester.pump();
+          await tester.tap(find.text('ফিডব্যাক জমা দিন'));
+          await tester.pump();
+          await tester.pump();
+
+          expect(tester.takeException(), isNull);
+          expect(
+            find.text('দয়া করে কারণ সিলেক্ট করুন অথবা আপনার অভিজ্ঞতা লিখুন।'),
+            findsOneWidget,
+          );
+        },
+      );
+    }
+
     testWidgets(
       'rotating with a dialog open keeps selected category and typed comment',
       (WidgetTester tester) async {
